@@ -13,7 +13,22 @@
 # seed: for random numbers in choosing holdout set
 # holdout: size of holdout set (can be 0)
 
-# 
+# examples:
+
+# (load 'english', from 'data/'; after make this a package, just use 
+# 'data(english)
+
+# eng <-
+#    english[,c("age","birth_order","ethnicity","sex","mom_ed","vocab")] 
+
+# z <- qeMLna(eng,'vocab','qeLin','compCases',retainMVFtnOut=FALSE)
+# z <- qeMLna(eng,'vocab','qeLin','mice',retainMVFtnOut=FALSE)
+
+# just type 'z' to see what's in there, e.g. the estimated beta
+# coefficients based on the non-NA data
+
+# Not done!!  Need to define a 'predict' method for the class
+# 'MVqeMLout'
 
 qeMLna <- function(data,yName,qeMLftn,
    mvFtn,qeMLopts=NULL,mvPredOpts=NULL,retainMVFtnOut=TRUE,
@@ -42,6 +57,8 @@ qeMLna <- function(data,yName,qeMLftn,
    qeMLout$intactRows <- intactRows
    qeMLout$nonintactRows <- nonintactRows
    if (retainMVFtnOut) qeMLout$MVFtnOut <- MVFtnOut
+
+   class(qeMLout) <- 'MVqeMLout'
 
    qeMLout
 }
