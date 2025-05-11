@@ -23,9 +23,14 @@
 
 # z <- qeMLna(eng,'vocab','qeLin','compCases',retainMVFtnOut=FALSE)
 # z <- qeMLna(eng,'vocab','qeLin','mice',retainMVFtnOut=FALSE)
+# z <- qeMLna(eng,'vocab','qeLin','mice',
+#    mvPredOpts=list(seed=7777),retainMVFtnOut=FALSE)
+# this last sets the random number seed for 'mice', not for 'qelin'
 
 # just type 'z' to see what's in there, e.g. the estimated beta
 # coefficients based on the non-NA data
+
+# could have, e.g. qeRF instead of qeLin for random forests
 
 # Not done!!  Need to define a 'predict' method for the class
 # 'MVqeMLout'
