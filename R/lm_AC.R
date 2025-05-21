@@ -1,19 +1,42 @@
 # lm_AC: Linear Model using Available Cases (pairwise deletion)
 # ------------------------------------------------------------
 # Implements regression when X or y contain NAs by computing
-# each element of X'X and X'y as the "average" of intact pairs,
+# each element of X'X and X'y as the *average* of intact pairs,
 # then solving the normal equations directly on those averages
+# (per Prof. Matloff’s Option 2).
 
 # -----------------------------------------------------------------------
 # Constructor: Initializes an lm_AC object with formula and raw data.
 # -----------------------------------------------------------------------
 lm_AC <- function(yName, data) {
   formula <- reformulate(".", response = yName)
+  
+  # Pull out design matrix and response (with possible NAs)
+  mf <- model.frame(formula, data, na.action = NULL)
+  y  <- model.response(mf)
+  X  <- model.matrix(formula, mf)
+  
+  # Compute pairwise average XtX and Xty
+  XtX_avg <- ac_mul(X)
+  Xty_avg <- ac_vec(X, y)
+  
+  # Sanity check: must be estimable
+  if (anyNA(XtX_avg) || anyNA(Xty_avg)) {
+    stop("Missing values in system matrices: need at least one intact pair per term.")
+  }
+  
+  # Estimate coefficients via normal equations
+  beta_hat <- solve(XtX_avg, Xty_avg)
+  
+  # Return fitted model object
   obj <- list(
-    data    = data,        # original data.frame (may contain NAs)
-    yName   = yName,       # name of the response variable
-    formula = formula,     # will be used to build X and y
-    fit_obj = NULL         # placeholder for fitted model results
+    data     = data,
+    yName    = yName,
+    formula  = formula,
+    fit_obj  = list(
+      coef     = beta_hat,
+      colnames = colnames(X)
+    )
   )
   class(obj) <- "lm_AC"
   obj
@@ -22,8 +45,8 @@ lm_AC <- function(yName, data) {
 # -----------------------------------------------------------------------
 # ac_mul: Compute (1/n_i_j) * sum[X_i * X_j] over available pairs
 # For each pair of columns (i,j), only rows where both are non-NA
-# are used, and we take the mean of the products. That yields
-# an estimate of E[X_i X_j].
+# are used, and we take the *mean* of the products.  That yields
+# an estimate of E[X_i X_j] (prof’s Option 2), not the raw sum.
 # -----------------------------------------------------------------------
 ac_mul <- function(A) {
   if (!is.matrix(A)) A <- as.matrix(A)
@@ -69,53 +92,11 @@ ac_vec <- function(X, y) {
   result
 }
 
-# dispatch generic
-fit <- function(object, ...) UseMethod("fit")
-
-# -----------------------------------------------------------------------
-# fit.lm_AC: Fit the model using Option 2 (average over intact pairs)
-#
-# 1. Build model frame & design matrix X, response y (allow NAs).
-# 2. Compute pairwise averages XtX_avg = (1/n_ij) Σ X_i X_j,
-#    and Xty_avg = (1/n_i) Σ X_i y.
-# 3. Solve β = (XtX_avg)^{-1} Xty_avg, which is equivalent to
-#    solving on sums, since the n-scaling cancels out.
-# -----------------------------------------------------------------------
-fit.lm_AC <- function(object, ...) {
-  data    <- object$data
-  formula <- object$formula
-  
-  # pull out X and y, preserving NA rows
-  mf <- model.frame(formula, data, na.action = NULL)
-  y  <- model.response(mf)
-  X  <- model.matrix(formula, mf)
-  
-  # compute pairwise-average matrices per Option 2
-  XtX_avg <- ac_mul(X)
-  Xty_avg <- ac_vec(X, y)
-  
-  # stop if any element is still NA (i.e. no intact pairs for some term)
-  if (anyNA(XtX_avg) || anyNA(Xty_avg)) {
-    stop("Missing values in system matrices: need at least one intact pair per term.")
-  }
-  
-  # solve normal equations on averages—multiplier cancels out
-  beta_hat <- solve(XtX_avg, Xty_avg)
-  
-  # store results
-  object$fit_obj <- list(
-    coef    = beta_hat,
-    colnames = colnames(X),
-    formula  = formula
-  )
-  object
-}
-
 # -----------------------------------------------------------------------
 # summary.lm_AC: Print coefficients (same shape as lm())
 # -----------------------------------------------------------------------
 summary.lm_AC <- function(object, ...) {
-  if (is.null(object$fit_obj)) stop("Model not fitted; call fit() first.")
+  if (is.null(object$fit_obj)) stop("Model not fitted.")
   coefs <- object$fit_obj$coef
   names(coefs) <- object$fit_obj$colnames
   print(coefs)
@@ -127,7 +108,7 @@ summary.lm_AC <- function(object, ...) {
 # build design matrix and compute y_hat = X_new %*% β_hat
 # -----------------------------------------------------------------------
 predict.lm_AC <- function(object, newdata, ...) {
-  if (is.null(object$fit_obj)) stop("Model not fitted; call fit() first.")
+  if (is.null(object$fit_obj)) stop("Model not fitted.")
   X_new <- model.matrix(object$formula, newdata)
   as.vector(X_new %*% object$fit_obj$coef)
 }
