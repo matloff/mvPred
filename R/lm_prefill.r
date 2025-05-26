@@ -117,3 +117,16 @@ predict.lm_prefill <- function(object, newdata, type = "response", ...) {
   }
 }
 
+#Example Usage
+# Step 1: Create lm_prefill object with target variable "mpg"
+lm_obj <- lm_prefill(yName = "mpg", data = mtcars_missing)
+
+# Step 2: Impute missing data using one of the methods, e.g., "mice"
+lm_obj <- impute(lm_obj, method = "mice", m = 5, maxit = 5, seed = 123)
+
+# Step 3: Fit the linear model on the imputed data
+lm_obj <- fit(lm_obj)
+
+# Step 4: Summarize the fitted model
+summary(lm_obj)
+                                   
