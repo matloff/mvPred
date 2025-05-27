@@ -27,7 +27,7 @@ lm_AC <- function(data, yName, ...) {
       data[[col]] <- as.factor(data[[col]])
     }
   }
-  data <- regtools::factorsToDummies(data)
+  data <-  as.data.frame(regtools::factorsToDummies(data))
   
   # # ----------------------------
   # # 3. Remove columns with all NA
