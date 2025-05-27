@@ -1,3 +1,5 @@
+library(regtools)
+
 # lm_AC: Linear Model using Available Cases (pairwise deletion)
 # ------------------------------------------------------------
 # Implements regression when X or y contain NAs by computing
@@ -8,27 +10,79 @@
 # -----------------------------------------------------------------------
 # Constructor: Initializes an lm_AC object with formula and raw data.
 # -----------------------------------------------------------------------
-lm_AC <- function(yName, data) {
-  formula <- reformulate(".", response = yName)
+lm_AC <- function(data, yName, ...) {
+  # ----------------------------
+  # Input validation
+  # ----------------------------
+  if (!is.data.frame(data)) stop("Input 'data' must be a data.frame.")
+  if (!(yName %in% names(data))) stop(paste("Column", yName, "not found in data."))
+  if (!is.numeric(data[[yName]])) stop("Response variable must be numeric.")
+  if (nrow(data) == 0) stop("Input data is empty.")
   
-  # Pull out design matrix and response (with possible NAs)
-  mf <- model.frame(formula, data, na.action = NULL)
+  # ----------------------------
+  # Convert character/logical to factor, then to dummy variables
+  # ----------------------------
+  for (col in names(data)) {
+    if (is.character(data[[col]]) || is.logical(data[[col]])) {
+      data[[col]] <- as.factor(data[[col]])
+    }
+  }
+  data <- regtools::factorsToDummies(data)
+  
+  # # ----------------------------
+  # # 3. Remove columns with all NA
+  # # ----------------------------
+  # keep_cols <- sapply(data, function(col) sum(!is.na(col)) > 0)
+  # data <- data[, keep_cols, drop = FALSE]
+  # if (!(yName %in% names(data))) stop("Response variable became empty after dropping NA columns.")
+  
+  # ----------------------------
+  # Clean column names (in case of dummies)
+  # ----------------------------
+  names(data) <- make.names(names(data), unique = TRUE)
+  
+  # ----------------------------
+  # Construct formula
+  # ----------------------------
+  formula <- reformulate(setdiff(names(data), yName), response = yName)
+
+  # ----------------------------
+  # Build model.frame and model.matrix with do.call to allow user-specified options
+  # ----------------------------
+  mf_args <- list(formula = formula, data = data, na.action = NULL, ...)
+  mf <- do.call(model.frame, mf_args)
   y  <- model.response(mf)
   X  <- model.matrix(formula, mf)
-  
-  # Compute pairwise average XtX and Xty
+
+  # ----------------------------
+  # Drop constant columns (0 variance)
+  # ----------------------------
+  # const_idx <- apply(X, 2, function(col) var(col, na.rm = TRUE) == 0)
+  # if (any(const_idx)) {
+  #   X <- X[, !const_idx, drop = FALSE]
+  # }
+
+  # ----------------------------
+  # 8. Compute average-based XtX and Xty
+  # ----------------------------
   XtX_avg <- ac_mul(X)
   Xty_avg <- ac_vec(X, y)
-  
-  # Sanity check: must be estimable
+
+  # ----------------------------
+  # 9. Solve system and catch singular matrix errors
+  # ----------------------------
   if (anyNA(XtX_avg) || anyNA(Xty_avg)) {
     stop("Missing values in system matrices: need at least one intact pair per term.")
   }
-  
-  # Estimate coefficients via normal equations
-  beta_hat <- solve(XtX_avg, Xty_avg)
-  
-  # Return fitted model object
+
+  beta_hat <- tryCatch(
+    solve(XtX_avg, Xty_avg),
+    error = function(e) stop("XtX is singular; regression cannot proceed.")
+  )
+
+  # ----------------------------
+  # 10. Return model
+  # ----------------------------
   obj <- list(
     data     = data,
     yName    = yName,
@@ -41,6 +95,7 @@ lm_AC <- function(yName, data) {
   class(obj) <- "lm_AC"
   obj
 }
+
 
 # -----------------------------------------------------------------------
 # ac_mul: Compute (1/n_i_j) * sum[X_i * X_j] over available pairs
