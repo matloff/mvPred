@@ -3,12 +3,24 @@ library(Amelia)
 library(missForest)
 
 # Internal constructor (hidden from user)
-lm_prefill_create <- function(yName, data) {
+lm_prefill_create <- function(yName, data, holdout = NULL) {
   formula <- reformulate(".", response = yName)
   environment(formula) <- environment()
+
+   if (!is.null(holdout)) {
+    if (!is.logical(holdout) || length(holdout) != nrow(data)) {
+      stop("Holdout is invalid")
+    }
+    training_data <- data[!holdout, 1:ncol(data), drop = FALSE]
+    testing_data <- data[holdout, 1:ncol(data), drop = FALSE]
+  } else {
+    training_data <- data
+    testing_data <- NULL
+  }
   
   obj <- list(
-    data = data,
+    data = training_data,
+    testing_data = testing_data,
     yName = yName,
     formula = formula,
     fit_obj = NULL,
@@ -17,6 +29,55 @@ lm_prefill_create <- function(yName, data) {
   )
   class(obj) <- "lm_prefill"
   obj
+}
+
+bootstrap <- function(yName, data, method = "mice", m = 5, coef_name, reps = 100, holdout_size = 0.2, ...) {
+  coefs <- numeric(reps)
+  mspe_values <- numeric(reps)
+  mape_values <- numeric(reps)
+  size <- holdout_size * nrow(data)
+
+  for(i in 1:reps) {
+    holdout_set <- sample(nrow(data), size = size)
+
+    obj <- lm_prefill(yName, data, method = "mice", m = 5, holdout = holdout_set, ...)
+
+    if (method == "complete" || method == "missforest") {
+      coefs[i] <- coef(obj$fit_obj)[coef_name]
+      
+    } else if (method == "mice") {
+      values <- sapply(obj$fit_obj$analyses, function(fit) coef(fit)[coef_name])
+      coefs[i] <- mean(values)
+      
+    } else if (method == "amelia") {
+      values <- sapply(obj$fit_obj, function(fit) coef(fit)[coef_name])
+      coefs[i] <- mean(values)
+      
+    } else {
+      stop("Unknown imputation method.")
+  }
+
+    testing_data <- obj$testing_data
+    y_actual <- obj$testing_data[[yName]]
+    y_pred <- predict.lm_prefill(obj, newdata = obj$testing_data)
+
+    mspe_values[i] <- mean((y_actual - y_pred)^2)
+    mape_values[i] <- mean(abs((y_actual - y_pred) / y_actual))
+  }
+
+  avg_coef <- mean(coefs)
+  se <- sd(coefs) / sqrt(reps)
+  CI <- c(avg_coef - (1.96 * se), avg_coef + (1.96 * se))
+
+  results <- list(
+    coef_mean = avg_coef,
+    coef_se = se,
+    coef_CI = CI,
+    coefs = coefs,
+    mspe = mean(mspe_values),
+    mape = mean(mape_values)
+  )
+  return(results)
 }
 
 # Impute Data
@@ -98,8 +159,8 @@ summary.lm_prefill <- function(object, ...) {
 
 
 # User-facing function: creates object, imputes, fits, returns summary
-lm_prefill <- function(yName, data, method = "mice", m = 5, ...) {
-  obj <- lm_prefill_create(yName, data)
+lm_prefill <- function(yName, data, method = "mice", m = 5, holdout = NULL, ...) {
+  obj <- lm_prefill_create(yName, data, holdout = holdout)
   obj <- impute.lm_prefill(obj, method = method, m = m, ...)
   obj <- fit.lm_prefill(obj)
   # Return the full object, not summary
