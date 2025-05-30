@@ -70,10 +70,9 @@ bootstrap <- function(yName, data, method = "mice", m = 5, coef_name, reps = 100
   CI <- c(avg_coef - (1.96 * se), avg_coef + (1.96 * se))
 
   results <- list(
-    coef_mean = avg_coef,
-    coef_se = se,
-    coef_CI = CI,
-    coefs = coefs,
+    avg_coef = avg_coef,
+    se = se,
+    CI = CI,
     mspe = mean(mspe_values),
     mape = mean(mape_values)
   )
