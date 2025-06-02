@@ -27,14 +27,8 @@ lm_AC <- function(data, yName, ...) {
       data[[col]] <- as.factor(data[[col]])
     }
   }
-  data <-  as.data.frame(regtools::factorsToDummies(data))
   
-  # # ----------------------------
-  # # 3. Remove columns with all NA
-  # # ----------------------------
-  # keep_cols <- sapply(data, function(col) sum(!is.na(col)) > 0)
-  # data <- data[, keep_cols, drop = FALSE]
-  # if (!(yName %in% names(data))) stop("Response variable became empty after dropping NA columns.")
+  data <-  as.data.frame(regtools::factorsToDummies(data))
   
   # ----------------------------
   # Clean column names (in case of dummies)
@@ -55,21 +49,13 @@ lm_AC <- function(data, yName, ...) {
   X  <- model.matrix(formula, mf)
 
   # ----------------------------
-  # Drop constant columns (0 variance)
-  # ----------------------------
-  # const_idx <- apply(X, 2, function(col) var(col, na.rm = TRUE) == 0)
-  # if (any(const_idx)) {
-  #   X <- X[, !const_idx, drop = FALSE]
-  # }
-
-  # ----------------------------
-  # 8. Compute average-based XtX and Xty
+  # Compute average-based XtX and Xty
   # ----------------------------
   XtX_avg <- ac_mul(X)
   Xty_avg <- ac_vec(X, y)
 
   # ----------------------------
-  # 9. Solve system and catch singular matrix errors
+  # Solve system and catch singular matrix errors
   # ----------------------------
   if (anyNA(XtX_avg) || anyNA(Xty_avg)) {
     stop("Missing values in system matrices: need at least one intact pair per term.")
@@ -81,7 +67,7 @@ lm_AC <- function(data, yName, ...) {
   )
 
   # ----------------------------
-  # 10. Return model
+  # Return model
   # ----------------------------
   obj <- list(
     data     = data,
