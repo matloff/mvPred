@@ -1,6 +1,6 @@
 library(regtools)
 
-# lm_AC: Linear Model using Available Cases (pairwise deletion)
+# lm_ac: Linear Model using Available Cases (pairwise deletion)
 # ------------------------------------------------------------
 # Implements regression when X or y contain NAs by computing
 # each element of X'X and X'y as the *average* of intact pairs,
@@ -8,9 +8,9 @@ library(regtools)
 # (per Prof. Matloff’s Option 2).
 
 # -----------------------------------------------------------------------
-# Constructor: Initializes an lm_AC object with formula and raw data.
+# Constructor: Initializes an lm_ac object with formula and raw data.
 # -----------------------------------------------------------------------
-lm_AC <- function(data, yName, ...) {
+lm_ac <- function(data, yName, ...) {
   # ----------------------------
   # Input validation
   # ----------------------------
@@ -78,7 +78,7 @@ lm_AC <- function(data, yName, ...) {
       colnames = colnames(X)
     )
   )
-  class(obj) <- "lm_AC"
+  class(obj) <- "lm_ac"
   obj
 }
 
@@ -134,9 +134,9 @@ ac_vec <- function(X, y) {
 }
 
 # -----------------------------------------------------------------------
-# summary.lm_AC: Print coefficients (same shape as lm())
+# summary.lm_ac: Print coefficients (same shape as lm())
 # -----------------------------------------------------------------------
-summary.lm_AC <- function(object, ...) {
+summary.lm_ac <- function(object, ...) {
   if (is.null(object$fit_obj)) stop("Model not fitted.")
   coefs <- object$fit_obj$coef
   names(coefs) <- object$fit_obj$colnames
@@ -145,10 +145,10 @@ summary.lm_AC <- function(object, ...) {
 }
 
 # -----------------------------------------------------------------------
-# predict.lm_AC: Given newdata (with possible NAs in predictors),
+# predict.lm_ac: Given newdata (with possible NAs in predictors),
 # build design matrix and compute y_hat = X_new %*% β_hat
 # -----------------------------------------------------------------------
-predict.lm_AC <- function(object, newdata, ...) {
+summary.lm_ac <- function(object, newdata, ...) {
   if (is.null(object$fit_obj)) stop("Model not fitted.")
   X_new <- model.matrix(object$formula, newdata)
   as.vector(X_new %*% object$fit_obj$coef)
