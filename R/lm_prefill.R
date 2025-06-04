@@ -24,7 +24,7 @@ detect_and_prepare_noms <- function(data, use_dummies = FALSE) {
 }
 
 # Performs bootstrap estimate of standard error 
-bootstrap <- function(yName, data, method = "mice", m = 5, coef_name, reps = 100, holdout_size = 0.2, ...) {
+bootstrap <- function(data, yName, impute_method = "mice", m = 5, coef_name, reps = 100, holdout_size = 0.2, use_dummies = FALSE, ...) {
   coefs <- numeric(reps)
   mspe_values <- numeric(reps)
   mape_values <- numeric(reps)
@@ -33,24 +33,23 @@ bootstrap <- function(yName, data, method = "mice", m = 5, coef_name, reps = 100
   for(i in 1:reps) {
     holdout_set <- sample(nrow(data), size = size)
 
-    obj <- lm_prefill(yName, data, method = "mice", m = 5, holdout = holdout_set, ...)
+    obj <- lm_prefill(data, yName, impute_method = "mice", m = 5, use_dummies = use_dummies, holdout = holdout_set, ...)
 
-    if (method == "complete" || method == "missforest") {
+    if (impute_method == "complete" || impute_method == "missforest") {
       coefs[i] <- coef(obj$fit_obj)[coef_name]
       
-    } else if (method == "mice") {
+    } else if (impute_method == "mice") {
       values <- sapply(obj$fit_obj$analyses, function(fit) coef(fit)[coef_name])
       coefs[i] <- mean(values)
       
-    } else if (method == "amelia") {
+    } else if (impute_method == "amelia") {
       values <- sapply(obj$fit_obj, function(fit) coef(fit)[coef_name])
       coefs[i] <- mean(values)
       
     } else {
       stop("Unknown imputation method.")
   }
-
-    testing_data <- obj$testing_data
+    # Calculate prediction errors
     y_actual <- obj$testing_data[[yName]]
     y_pred <- predict.lm_prefill(obj, newdata = obj$testing_data)
 
@@ -58,12 +57,13 @@ bootstrap <- function(yName, data, method = "mice", m = 5, coef_name, reps = 100
     mape_values[i] <- mean(abs((y_actual - y_pred) / y_actual))
   }
 
-  # Calculate Confidence Interval, MAPE, MSPE 
+  # Calculate confidence interval
   avg_coef <- mean(coefs)
   
   se <- sd(coefs) / sqrt(reps)
   CI <- c(avg_coef - (1.96 * se), avg_coef + (1.96 * se))
 
+  # Summarize results
   results <- list(
     coef_mean = avg_coef,
     coef_se = se,
