@@ -10,7 +10,7 @@ library(regtools)
 # -----------------------------------------------------------------------
 # Constructor: Initializes an lm_ac object with formula and raw data.
 # -----------------------------------------------------------------------
-lm_ac <- function(data, yName, ...) {
+lm_ac <- function(data, yName, holdout = NULL, ...) {
   # ----------------------------
   # Input validation
   # ----------------------------
@@ -18,6 +18,21 @@ lm_ac <- function(data, yName, ...) {
   if (!(yName %in% names(data))) stop(paste("Column", yName, "not found in data."))
   if (!is.numeric(data[[yName]])) stop("Response variable must be numeric.")
   if (nrow(data) == 0) stop("Input data is empty.")
+
+  # ----------------------------
+  # Holdout set for bootstrap
+  # ----------------------------
+
+  if (!is.null(holdout)) {
+    if (!is.logical(holdout) || length(holdout) != nrow(data)) {
+      stop("Holdout is invalid")
+    }
+    training_data <- data[!holdout, 1:ncol(data), drop = FALSE]
+    testing_data <- data[holdout, 1:ncol(data), drop = FALSE]
+  } else {
+    training_data <- data
+    testing_data <- NULL
+  }
   
   # ----------------------------
   # Convert character/logical to factor, then to dummy variables
@@ -70,7 +85,8 @@ lm_ac <- function(data, yName, ...) {
   # Return model
   # ----------------------------
   obj <- list(
-    data     = data,
+    data     = training_data,
+    testing_data = testing_data,
     yName    = yName,
     formula  = formula,
     fit_obj  = list(
@@ -81,6 +97,8 @@ lm_ac <- function(data, yName, ...) {
   class(obj) <- "lm_ac"
   obj
 }
+
+
 
 
 # -----------------------------------------------------------------------
@@ -152,4 +170,59 @@ summary.lm_ac <- function(object, newdata, ...) {
   if (is.null(object$fit_obj)) stop("Model not fitted.")
   X_new <- model.matrix(object$formula, newdata)
   as.vector(X_new %*% object$fit_obj$coef)
+}
+
+# -----------------------------------------------------------------------
+# bootstrap: Performs bootstrap estimate of standard error for lm_ac
+# -----------------------------------------------------------------------
+
+bootstrap <- function(data, yName, coef_name, reps = 100, holdout_size = 0.2, ...) {
+  coefs <- numeric(reps)
+  mspe_values <- numeric(reps)
+  mape_values <- numeric(reps)
+  size <- holdout_size * nrow(data)
+
+  for(i in 1:reps) {
+    holdout_set <- sample(nrow(data), size = size)
+
+    obj <- lm_ac(data, yName, holdout = holdout_set, ...)
+
+    if (is.null(obj)) {
+      coefs[i] <- NA
+      mspe_values[i] <- NA
+      mape_values[i] <- NA
+      next
+    }
+
+    coef <- coef(obj)
+    if (coef_name %in% names(coef)) {
+        coefs[i] <- coef[coef_name]
+    } else {
+        coefs[i] <- NA
+    }
+
+    # Calculate prediction errors
+    y_actual <- obj$testing_data[[yName]]
+    y_pred <- predict.lm_ac(obj, newdata = obj$testing_data)
+
+    mspe_values[i] <- mean((y_actual - y_pred)^2)
+    mape_values[i] <- mean(abs((y_actual - y_pred) / y_actual))
+  }
+
+  # Calculate confidence interval
+  avg_coef <- mean(coefs)
+  
+  se <- sd(coefs) / sqrt(reps)
+  CI <- c(avg_coef - (1.96 * se), avg_coef + (1.96 * se))
+
+  # Summarize results
+  results <- list(
+    coef_mean = avg_coef,
+    coef_se = se,
+    coef_CI = CI,
+    coefs = coefs,
+    mspe = mean(mspe_values),
+    mape = mean(mape_values)
+  )
+  return(results)
 }
