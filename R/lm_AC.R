@@ -15,7 +15,11 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
   # Input validation
   # ----------------------------
   if (!is.data.frame(data)) stop("Input 'data' must be a data.frame.")
-  if (!(yName %in% names(data))) stop(paste("Column", yName, "not found in data."))
+  
+  if (!(yName %in% names(data))){
+    stop(paste("Column", yName, "not found in data.")) 
+  }
+  
   if (!is.numeric(data[[yName]])) stop("Response variable must be numeric.")
   if (nrow(data) == 0) stop("Input data is empty.")
 
@@ -56,7 +60,8 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
   formula <- reformulate(setdiff(names(data), yName), response = yName)
 
   # ----------------------------
-  # Build model.frame and model.matrix with do.call to allow user-specified options
+  # Build model.frame and model.matrix with do.call to allow user-specified
+  # options 
   # ----------------------------
   mf_args <- list(formula = formula, data = data, na.action = NULL, ...)
   mf <- do.call(model.frame, mf_args)
@@ -73,7 +78,10 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
   # Solve system and catch singular matrix errors
   # ----------------------------
   if (anyNA(XtX_avg) || anyNA(Xty_avg)) {
-    stop("Missing values in system matrices: need at least one intact pair per term.")
+    stop("
+      Missing values in system matrices: 
+      need at least one intact pair per term.
+    ") 
   }
 
   beta_hat <- tryCatch(
@@ -176,7 +184,9 @@ summary.lm_ac <- function(object, newdata, ...) {
 # bootstrap: Performs bootstrap estimate of standard error for lm_ac
 # -----------------------------------------------------------------------
 
-bootstrap <- function(data, yName, coef_name, reps = 100, holdout_size = 0.2, ...) {
+bootstrap <- function(
+  data, yName, coef_name, reps = 100, holdout_size = 0.2, ...
+) {
   coefs <- numeric(reps)
   mspe_values <- numeric(reps)
   mape_values <- numeric(reps)
