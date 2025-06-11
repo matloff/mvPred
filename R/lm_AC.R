@@ -174,7 +174,7 @@ summary.lm_ac <- function(object, ...) {
 # predict.lm_ac: Given newdata (with possible NAs in predictors),
 # build design matrix and compute y_hat = X_new %*% β_hat
 # -----------------------------------------------------------------------
-summary.lm_ac <- function(object, newdata, ...) {
+predict.lm_ac <- function(object, newdata, ...) {
   if (is.null(object$fit_obj)) stop("Model not fitted.")
   X_new <- model.matrix(object$formula, newdata)
   as.vector(X_new %*% object$fit_obj$coef)

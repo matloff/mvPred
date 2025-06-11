@@ -1,0 +1,33 @@
+# Exported functions
+export(lm_ac)
+export(ac_mul)
+export(ac_vec)
+export(summary.lm_ac)
+export(predict.lm_ac)
+export(bootstrap)
+
+export(lm_prefill)
+export(summary.lm_prefill)
+export(predict.lm_prefill)
+export(impute.lm_prefill)
+export(fit.lm_prefill)
+
+export(lm_compare)
+
+export(lm_tower)
+export(summary.lm_tower)
+export(predict.lm_tower)
+
+export(compCases)
+
+export(qeMLna)
+export(addListElement)
+
+# Imported functions
+importFrom(regtools, factorsToDummies)
+importFrom(mice, mice, complete)
+importFrom(Amelia, amelia)
+importFrom(missForest, missForest)
+importFrom(stats, lm, model.matrix, model.response, complete.cases, predict, na.omit)
+importFrom(utils, head)
+import(qeML)  # If you directly call qeML functions

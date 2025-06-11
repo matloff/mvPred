@@ -1,0 +1,16 @@
+Package: mvPred
+Type: Package
+Title: Handling Missing Values
+Version: 0.1.0
+Author: 
+    Dr. Norman Matloff [aut, cre], 
+    Cynthia Mascarenhas [aut], 
+    Billy Ouattara [aut], 
+    Alekya Veluri [aut]
+Maintainer: Dr. Norman Matloff <nsmatloff@ucdavis.edu>
+Description: This package provides a user-friendly option for handling 
+    missing values in data. It uses methods like mice and amelia for data
+    imputation, as well as methods like available cases in linear modeling.
+License: MIT
+Encoding: UTF-8
+LazyData: true
