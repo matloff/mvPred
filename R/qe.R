@@ -16,6 +16,6 @@ qeMLna <- function(data,yName,
 {
 
    # cases in which MV method involves pre-processing the data
-   if (mvFtn == 'mice')
+   if (mvFtn == 'mice') print()
 
 }
