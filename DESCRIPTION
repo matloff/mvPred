@@ -9,7 +9,8 @@ Authors@R: c(
     person("Alekya", "Veluri", role = "aut")
 )
 
-Description: Provides user-friendly methods for handling missing data in regression modeling, including available-case linear regression, multiple imputation using mice, Amelia, and missForest, and missing-data handling via the toweranNA package.
+Description: Provides user-friendly methods for handling missing data in regression modeling, including available-case linear regression,
+    multiple imputation using mice, Amelia, and missForest, and missing-data handling via the toweranNA package.
 
 Depends: R (>= 4.0.0)
 Imports:
