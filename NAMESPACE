@@ -2,26 +2,23 @@
 export(lm_ac)
 export(ac_mul)
 export(ac_vec)
-export(summary.lm_ac)
-export(predict.lm_ac)
-export(bootstrap)
-
+export(bootstrap)       # If bootstrap is user-facing
 export(lm_prefill)
-export(summary.lm_prefill)
-export(predict.lm_prefill)
-export(impute.lm_prefill)
-export(fit.lm_prefill)
-
 export(lm_compare)
-
 export(lm_tower)
-export(summary.lm_tower)
-export(predict.lm_tower)
-
 export(compCases)
-
 export(qeMLna)
 export(addListElement)
+
+# S3 method registrations
+S3method(summary, lm_ac)
+S3method(predict, lm_ac)
+
+S3method(summary, lm_prefill)
+S3method(predict, lm_prefill)
+
+S3method(summary, lm_tower)
+S3method(predict, lm_tower)
 
 # Imported functions
 importFrom(regtools, factorsToDummies)
@@ -30,4 +27,6 @@ importFrom(Amelia, amelia)
 importFrom(missForest, missForest)
 importFrom(stats, lm, model.matrix, model.response, complete.cases, predict, na.omit)
 importFrom(utils, head)
-import(qeML)  # If you directly call qeML functions
+
+# If you use many functions from qeML, import the whole package; otherwise, import specific functions
+importFrom(qeML, qeMLna, addListElement)
