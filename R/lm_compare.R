@@ -71,26 +71,26 @@ lm_compare <- function(models, yName,
 }
 
 
-data(airquality)
-set.seed(42)
+# data(airquality)
+# set.seed(42)
 
-n   <- nrow(airquality)
-idx <- sample(n, size = floor(0.20 * n))    # 20 % hold‑out row numbers
+# n   <- nrow(airquality)
+# idx <- sample(n, size = floor(0.20 * n))    # 20 % hold‑out row numbers
 
-holdout_vec <- rep(FALSE, n)
-holdout_vec[idx] <- TRUE
+# holdout_vec <- rep(FALSE, n)
+# holdout_vec[idx] <- TRUE
 
-## Fit the models
-model_ac  <- lm_ac(airquality, "Ozone", holdout = holdout_vec)
-model_pre <- lm_prefill(airquality, "Ozone",
-                        impute_method = "mice", m = 5,
-                        holdout = holdout_vec)
+# ## Fit the models
+# model_ac  <- lm_ac(airquality, "Ozone", holdout = holdout_vec)
+# model_pre <- lm_prefill(airquality, "Ozone",
+#                         impute_method = "mice", m = 5,
+#                         holdout = holdout_vec)
 
-## Compare
-results <- lm_compare(list(ac = model_ac,
-                           prefill = model_pre),
-                      yName = "Ozone")
+# ## Compare
+# results <- lm_compare(list(ac = model_ac,
+#                            prefill = model_pre),
+#                       yName = "Ozone")
 
-results$RMSE
-results$R2
-results$Beta
+# results$RMSE
+# results$R2
+# results$Beta
