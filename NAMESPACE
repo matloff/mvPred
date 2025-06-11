@@ -29,4 +29,5 @@ importFrom(stats, lm, model.matrix, model.response, complete.cases, predict, na.
 importFrom(utils, head)
 
 # If you use many functions from qeML, import the whole package; otherwise, import specific functions
-importFrom(qeML, qeMLna, addListElement)
+# importFrom(qeML, qeMLna, addListElement)
+import(qeML)
