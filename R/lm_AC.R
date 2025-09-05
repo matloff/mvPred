@@ -28,11 +28,16 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
   # ----------------------------
 
   if (!is.null(holdout)) {
-    if (!is.logical(holdout) || length(holdout) != nrow(data)) {
+    if (is.logical(holdout) && length(holdout) == nrow(data)) {
+      training_data <- data[!holdout, 1:ncol(data), drop = FALSE]
+      testing_data <- data[holdout, 1:ncol(data), drop = FALSE]
+    } else if (is.numeric(holdout) && all(holdout %in% seq_len(nrow(data)))) {
+      training_data <- data[-holdout, 1:ncol(data), drop = FALSE]
+      testing_data  <- data[holdout, 1:ncol(data), drop = FALSE]
+    } else {
       stop("Holdout is invalid")
     }
-    training_data <- data[!holdout, 1:ncol(data), drop = FALSE]
-    testing_data <- data[holdout, 1:ncol(data), drop = FALSE]
+    
   } else {
     training_data <- data
     testing_data <- NULL
