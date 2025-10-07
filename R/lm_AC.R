@@ -17,7 +17,7 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
   if (!(yName %in% names(data))) stop(paste("Column", yName, "not found in data."))
   if (!is.numeric(data[[yName]])) stop("Response variable must be numeric.")
   if (nrow(data) == 0) stop("Input data is empty.")
-
+  
   # ----------------------------
   # Holdout set for bootstrap or validation
   # ----------------------------
@@ -36,7 +36,7 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
     testing_data  <- NULL
   }
   if (nrow(training_data) == 0) stop("No training rows available.")
-
+  
   # ----------------------------
   # Convert character/logical predictors to factors
   # ----------------------------
@@ -45,12 +45,12 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
       training_data[[col]] <- as.factor(training_data[[col]])
     }
   }
-
+  
   # ----------------------------
   # Construct regression formula: y ~ all other predictors
   # ----------------------------
   formula <- reformulate(setdiff(names(training_data), yName), response = yName)
-
+  
   # ----------------------------
   # Build model.frame and model.matrix with na.pass
   #   (this ensures rows with NAs are retained for AC math)
@@ -58,24 +58,24 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
   mf <- model.frame(formula, training_data, na.action = na.pass, ...)
   y  <- model.response(mf)
   X  <- model.matrix(attr(mf, "terms"), mf, na.action = na.pass)
-
+  
   # store the terms for consistent newdata handling
   trm  <- terms(mf)
   coln <- colnames(X)
-
+  
   # ----------------------------
   # Compute average-based XtX and Xty (pairwise deletion)
   # ----------------------------
   XtX_avg <- ac_mul(X)
   Xty_avg <- ac_vec(X, y)
-
+  
   if (anyNA(XtX_avg) || anyNA(Xty_avg)) {
     stop("
       Missing values in system matrices: 
       need at least one intact pair per term (and intercept).
     ")
   }
-
+  
   # ----------------------------
   # Solve system and catch singular matrix errors
   # ----------------------------
@@ -83,7 +83,7 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
     solve(XtX_avg, Xty_avg),
     error = function(e) stop("XtX is singular; regression cannot proceed.")
   )
-
+  
   # ----------------------------
   # Return lm_ac object
   # ----------------------------
@@ -166,18 +166,18 @@ predict.lm_ac <- function(object, newdata, ...) {
   stopifnot(inherits(object, "lm_ac"))
   if (is.null(object$fit_obj)) stop("Model not fitted.")
   if (missing(newdata)) stop("'newdata' is required for predict.lm_ac().")
-
+  
   # Convert character/logical predictors to factors
   for (col in names(newdata)) {
     if (is.character(newdata[[col]]) || is.logical(newdata[[col]])) {
       newdata[[col]] <- as.factor(newdata[[col]])
     }
   }
-
+  
   # Build model.frame and model.matrix with na.pass
   mf_new <- model.frame(object$terms, newdata, na.action = na.pass, ...)
   X_new  <- model.matrix(object$terms, mf_new, na.action = na.pass)
-
+  
   as.vector(X_new %*% object$fit_obj$coef)
 }
 
@@ -186,25 +186,25 @@ predict.lm_ac <- function(object, newdata, ...) {
 # Samples holdout sets repeatedly, fits model, collects coefs & errors.
 # -----------------------------------------------------------------------
 bootstrap <- function(
-  data, yName, coef_name, reps = 100, holdout_size = 0.2, ...
+    data, yName, coef_name, reps = 100, holdout_size = 0.2, ...
 ) {
   n <- nrow(data)
   if (n < 2) stop("Not enough rows for bootstrap.")
   if (holdout_size <= 0 || holdout_size >= 1) stop("'holdout_size' should be in (0,1).")
-
+  
   coefs <- numeric(reps)
   mspe_values <- numeric(reps)
   mape_values <- numeric(reps)
   size <- max(1L, floor(holdout_size * n))
-
+  
   for (i in seq_len(reps)) {
     holdout_set <- sample.int(n, size = size)
     obj <- lm_ac(data, yName, holdout = holdout_set, ...)
-
+    
     beta <- obj$fit_obj$coef
     names(beta) <- obj$fit_obj$colnames
     coefs[i] <- if (coef_name %in% names(beta)) beta[[coef_name]] else NA_real_
-
+    
     te <- obj$testing_data
     te <- te[!is.na(te[[yName]]), , drop = FALSE]
     if (nrow(te) == 0) {
@@ -223,11 +223,11 @@ bootstrap <- function(
       mape_values[i] <- NA
     }
   }
-
+  
   avg_coef <- mean(coefs, na.rm = TRUE)
   se <- sd(coefs, na.rm = TRUE) / sqrt(sum(!is.na(coefs)))
   CI <- c(avg_coef - (1.96 * se), avg_coef + (1.96 * se))
-
+  
   list(
     coef_mean = avg_coef,
     coef_se   = se,
