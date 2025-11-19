@@ -53,6 +53,7 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
   
   # ----------------------------
   # Build model.frame and model.matrix with na.pass
+  #   (this ensures rows with NAs are retained for AC math)
   # ----------------------------
   mf <- model.frame(formula, training_data, na.action = na.pass, ...)
   y  <- model.response(mf)
@@ -81,9 +82,14 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
   beta_hat <- tryCatch(
     solve(XtX_avg, Xty_avg),
     error = function(e) {
-      # tiny ridge to handle singularity
-      lam <- 1e-6
-      solve(XtX_avg + diag(lam, ncol(XtX_avg)), Xty_avg)
+      # try a sequence of larger ridge values
+      lam_seq <- 10 ^ seq(-6, -1, by = 1)  # 1e-6, 1e-5, ..., 1e-1
+      for (lam in lam_seq) {
+        M <- XtX_avg + diag(lam, ncol(XtX_avg))
+        ans <- try(solve(M, Xty_avg), silent = TRUE)
+        if (!inherits(ans, "try-error")) return(ans)
+      }
+      stop("Even ridge-regularized system is too ill-conditioned.")
     }
   )
   
@@ -92,7 +98,7 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
   # ----------------------------
   obj <- list(
     data         = training_data,
-    testing_data = testing_data,
+    testing_data = testing_data,  # raw holdout (predict() will handle transform)
     yName        = yName,
     formula      = formula,
     terms        = trm,
@@ -107,6 +113,7 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
 
 # -----------------------------------------------------------------------
 # ac_mul: Compute (1/n_ij) * sum[X_i * X_j] over available pairs
+# For each pair of columns (i,j), only rows where both are non-NA are used.
 # -----------------------------------------------------------------------
 ac_mul <- function(A) {
   if (!is.matrix(A)) A <- as.matrix(A)
@@ -146,7 +153,7 @@ ac_vec <- function(X, y) {
 }
 
 # -----------------------------------------------------------------------
-# summary.lm_ac: Print coefficients
+# summary.lm_ac: Print coefficients (same shape as lm())
 # -----------------------------------------------------------------------
 summary.lm_ac <- function(object, ...) {
   if (is.null(object$fit_obj)) stop("Model not fitted.")
@@ -190,43 +197,65 @@ predict.lm_ac <- function(object, newdata, ...) {
 
 
 # -----------------------------------------------------------------------
-# bootstrap: Performs bootstrap estimate of standard error for lm_ac
-# Samples holdout sets repeatedly, fits model, collects coefs & errors.
+# k-fold cross-validation for lm_ac
+#   - Splits data into k folds
+#   - For each fold: train on k-1 folds, test on the held-out fold
+#   - Aggregates coef, MSPE, and MAPE across folds
 # -----------------------------------------------------------------------
 bootstrap <- function(
-    data, yName, coef_name, reps = 100, holdout_size = 0.2, ...
+    data, yName, coef_name, k = 5, ...
 ) {
   n <- nrow(data)
-  if (n < 2) stop("Not enough rows for bootstrap.")
-  if (holdout_size <= 0 || holdout_size >= 1) stop("'holdout_size' should be in (0,1).")
+  if (n < 2) stop("Not enough rows for cross-validation.")
+  if (k < 2 || k > n) stop("'k' must be between 2 and nrow(data).")
   
-  coefs <- numeric(reps)
-  mspe_values <- numeric(reps)
-  mape_values <- numeric(reps)
-  size <- max(1L, floor(holdout_size * n))
+  # Randomly assign each row to one of k folds
+  fold_ids <- sample(rep(seq_len(k), length.out = n))
   
-  for (i in seq_len(reps)) {
-    holdout_set <- sample.int(n, size = size)
+  coefs <- numeric(k)
+  mspe_values <- numeric(k)
+  mape_values <- numeric(k)
+  
+  for (fold in seq_len(k)) {
+    holdout_set <- which(fold_ids == fold)
+    
+    # Fit lm_ac with this fold as the holdout
     obj <- lm_ac(data, yName, holdout = holdout_set, ...)
     
     beta <- obj$fit_obj$coef
     names(beta) <- obj$fit_obj$colnames
-    coefs[i] <- if (coef_name %in% names(beta)) beta[[coef_name]] else NA_real_
+    coefs[fold] <- if (coef_name %in% names(beta)) beta[[coef_name]] else NA_real_
     
     # Clean test (no NAs w.r.t. model terms)
     te_raw <- obj$testing_data
     mf_te  <- model.frame(obj$terms, te_raw, na.action = na.omit)
     if (nrow(mf_te) == 0L) {
-      mspe_values[i] <- NA_real_
-      mape_values[i] <- NA_real_
+      mspe_values[fold] <- NA_real_
+      mape_values[fold] <- NA_real_
       next
     }
+    
     y_true <- model.response(mf_te)
     X_te   <- model.matrix(obj$terms, mf_te, na.action = na.pass)
-    X_te   <- X_te[, obj$fit_obj$colnames, drop = FALSE]
+    
+    ## 🔑 HERE is the snippet you asked about:
+    # Make test design matrix compatible with training cols
+    train_cols <- obj$fit_obj$colnames
+    miss <- setdiff(train_cols, colnames(X_te))
+    if (length(miss)) {
+      X_te <- cbind(
+        X_te,
+        matrix(0, nrow(X_te), length(miss),
+               dimnames = list(NULL, miss))
+      )
+    }
+    # Now align column order
+    X_te <- X_te[, train_cols, drop = FALSE]
+    ## 🔑 snippet ends
+    
     y_pred <- as.numeric(X_te %*% obj$fit_obj$coef)
-    mspe_values[i] <- mean((y_true - y_pred)^2)
-    mape_values[i] <- mean(abs((y_true - y_pred) / y_true))
+    mspe_values[fold] <- mean((y_true - y_pred)^2)
+    mape_values[fold] <- mean(abs((y_true - y_pred) / y_true))
   }
   
   avg_coef <- mean(coefs, na.rm = TRUE)
@@ -234,11 +263,14 @@ bootstrap <- function(
   CI <- c(avg_coef - (1.96 * se), avg_coef + (1.96 * se))
   
   list(
-    coef_mean = avg_coef,
-    coef_se   = se,
-    coef_CI   = CI,
-    coefs     = coefs,
-    mspe      = mean(mspe_values, na.rm = TRUE),
-    mape      = mean(mape_values, na.rm = TRUE)
+    coef_mean     = avg_coef,
+    coef_se       = se,
+    coef_CI       = CI,
+    coefs         = coefs,
+    mspe          = mean(mspe_values, na.rm = TRUE),
+    mape          = mean(mape_values, na.rm = TRUE),
+    mspe_per_fold = mspe_values,
+    mape_per_fold = mape_values,
+    folds         = fold_ids
   )
 }
