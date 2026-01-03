@@ -10,17 +10,12 @@
 # Constructor: Initializes an lm_ac object with formula and raw data.
 # -----------------------------------------------------------------------
 lm_ac <- function(data, yName, holdout = NULL, ...) {
-  # ----------------------------
-  # Input validation
-  # ----------------------------
   if (!is.data.frame(data)) stop("Input 'data' must be a data.frame.")
   if (!(yName %in% names(data))) stop(paste("Column", yName, "not found in data."))
   if (!is.numeric(data[[yName]])) stop("Response variable must be numeric.")
   if (nrow(data) == 0) stop("Input data is empty.")
   
-  # ----------------------------
-  # Holdout set for bootstrap or validation
-  # ----------------------------
+  # Holdout set
   if (!is.null(holdout)) {
     if (is.logical(holdout) && length(holdout) == nrow(data)) {
       training_data <- data[!holdout, , drop = FALSE]
@@ -35,70 +30,42 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
     training_data <- data
     testing_data  <- NULL
   }
+  
   if (nrow(training_data) == 0) stop("No training rows available.")
   
-  # ----------------------------
   # Convert character/logical predictors to factors
-  # ----------------------------
   for (col in names(training_data)) {
     if (is.character(training_data[[col]]) || is.logical(training_data[[col]])) {
       training_data[[col]] <- as.factor(training_data[[col]])
     }
   }
   
-  # ----------------------------
-  # Construct regression formula: y ~ all other predictors
-  # ----------------------------
+  # Regression formula
   formula <- reformulate(setdiff(names(training_data), yName), response = yName)
   
-  # ----------------------------
-  # Build model.frame and model.matrix with na.pass
-  #   (this ensures rows with NAs are retained for AC math)
-  # ----------------------------
+  # model.frame/matrix with na.pass
   mf <- model.frame(formula, training_data, na.action = na.pass, ...)
   y  <- model.response(mf)
   X  <- model.matrix(attr(mf, "terms"), mf, na.action = na.pass)
   
-  # store the terms for consistent newdata handling
   trm  <- terms(mf)
   coln <- colnames(X)
   
-  # ----------------------------
-  # Compute average-based XtX and Xty (pairwise deletion)
-  # ----------------------------
   XtX_avg <- ac_mul(X)
   Xty_avg <- ac_vec(X, y)
   
   if (anyNA(XtX_avg) || anyNA(Xty_avg)) {
-    stop("
-      Missing values in system matrices: 
-      need at least one intact pair per term (and intercept).
-    ")
+    stop("Missing values in system matrices: need at least one intact pair per term (and intercept).")
   }
   
-  # ----------------------------
-  # Solve system and catch singular matrix errors
-  # ----------------------------
   beta_hat <- tryCatch(
     solve(XtX_avg, Xty_avg),
-    error = function(e) {
-      # try a sequence of larger ridge values
-      lam_seq <- 10 ^ seq(-6, -1, by = 1)  # 1e-6, 1e-5, ..., 1e-1
-      for (lam in lam_seq) {
-        M <- XtX_avg + diag(lam, ncol(XtX_avg))
-        ans <- try(solve(M, Xty_avg), silent = TRUE)
-        if (!inherits(ans, "try-error")) return(ans)
-      }
-      stop("Even ridge-regularized system is too ill-conditioned.")
-    }
+    error = function(e) stop("XtX is singular; regression cannot proceed.")
   )
   
-  # ----------------------------
-  # Return lm_ac object
-  # ----------------------------
   obj <- list(
     data         = training_data,
-    testing_data = testing_data,  # raw holdout (predict() will handle transform)
+    testing_data = testing_data,
     yName        = yName,
     formula      = formula,
     terms        = trm,
@@ -111,10 +78,6 @@ lm_ac <- function(data, yName, holdout = NULL, ...) {
   obj
 }
 
-# -----------------------------------------------------------------------
-# ac_mul: Compute (1/n_ij) * sum[X_i * X_j] over available pairs
-# For each pair of columns (i,j), only rows where both are non-NA are used.
-# -----------------------------------------------------------------------
 ac_mul <- function(A) {
   if (!is.matrix(A)) A <- as.matrix(A)
   p <- ncol(A)
@@ -136,9 +99,6 @@ ac_mul <- function(A) {
   result
 }
 
-# -----------------------------------------------------------------------
-# ac_vec: Compute (1/n_i) * sum[X_i * y] over available pairs
-# -----------------------------------------------------------------------
 ac_vec <- function(X, y) {
   if (!is.matrix(X)) X <- as.matrix(X)
   p <- ncol(X)
@@ -152,9 +112,6 @@ ac_vec <- function(X, y) {
   result
 }
 
-# -----------------------------------------------------------------------
-# summary.lm_ac: Print coefficients (same shape as lm())
-# -----------------------------------------------------------------------
 summary.lm_ac <- function(object, ...) {
   if (is.null(object$fit_obj)) stop("Model not fitted.")
   coefs <- object$fit_obj$coef
@@ -163,114 +120,206 @@ summary.lm_ac <- function(object, ...) {
   invisible(coefs)
 }
 
-# -----------------------------------------------------------------------
-# predict.lm_ac: Given newdata (with possible NAs), rebuild design matrix
-# using stored terms, and compute y_hat = X_new %*% β_hat (na.pass here).
-# NOTE: In evaluation, we clean test rows to ensure no NAs (see test func).
-# -----------------------------------------------------------------------
 predict.lm_ac <- function(object, newdata, ...) {
   stopifnot(inherits(object, "lm_ac"))
-  if (missing(newdata)) stop("'newdata' is required")
+  if (is.null(object$fit_obj)) stop("Model not fitted.")
+  if (missing(newdata)) stop("'newdata' is required for predict.lm_ac().")
   
-  newdata <- as.data.frame(newdata)
-  for (nm in names(newdata)) {
-    if (is.character(newdata[[nm]]) || is.logical(newdata[[nm]])) {
-      newdata[[nm]] <- as.factor(newdata[[nm]])
+  for (col in names(newdata)) {
+    if (is.character(newdata[[col]]) || is.logical(newdata[[col]])) {
+      newdata[[col]] <- as.factor(newdata[[col]])
     }
   }
   
   mf_new <- model.frame(object$terms, newdata, na.action = na.pass, ...)
-  if (nrow(mf_new) == 0L) return(numeric(0))
   X_new  <- model.matrix(object$terms, mf_new, na.action = na.pass)
-  
-  # align to training columns
-  train_cols <- object$fit_obj$colnames
-  miss <- setdiff(train_cols, colnames(X_new))
-  if (length(miss)) {
-    X_new <- cbind(X_new, matrix(0, nrow(X_new), length(miss),
-                                 dimnames = list(NULL, miss)))
-  }
-  X_new <- X_new[, train_cols, drop = FALSE]
   
   as.vector(X_new %*% object$fit_obj$coef)
 }
 
+# ============================================================
+# bootstrap = k-fold CV for CLASSIFICATION (CC vs AC)
+# ============================================================
 
-# -----------------------------------------------------------------------
-# k-fold cross-validation for lm_ac
-#   - Splits data into k folds
-#   - For each fold: train on k-1 folds, test on the held-out fold
-#   - Aggregates coef, MSPE, and MAPE across folds
-# -----------------------------------------------------------------------
 bootstrap <- function(
-    data, yName, coef_name, k = 5, ...
+    data,
+    yName,
+    k = 5,
+    threshold = 0.5,
+    method = c("AC", "CC"),
+    seed = 42,
+    ...
 ) {
-  n <- nrow(data)
-  if (n < 2) stop("Not enough rows for cross-validation.")
-  if (k < 2 || k > n) stop("'k' must be between 2 and nrow(data).")
+  method <- match.arg(method)
+  set.seed(seed)
   
-  # Randomly assign each row to one of k folds
-  fold_ids <- sample(rep(seq_len(k), length.out = n))
+  if (k < 2) stop("k must be at least 2.")
   
-  coefs <- numeric(k)
-  mspe_values <- numeric(k)
-  mape_values <- numeric(k)
-  
-  for (fold in seq_len(k)) {
-    holdout_set <- which(fold_ids == fold)
-    
-    # Fit lm_ac with this fold as the holdout
-    obj <- lm_ac(data, yName, holdout = holdout_set, ...)
-    
-    beta <- obj$fit_obj$coef
-    names(beta) <- obj$fit_obj$colnames
-    coefs[fold] <- if (coef_name %in% names(beta)) beta[[coef_name]] else NA_real_
-    
-    # Clean test (no NAs w.r.t. model terms)
-    te_raw <- obj$testing_data
-    mf_te  <- model.frame(obj$terms, te_raw, na.action = na.omit)
-    if (nrow(mf_te) == 0L) {
-      mspe_values[fold] <- NA_real_
-      mape_values[fold] <- NA_real_
-      next
-    }
-    
-    y_true <- model.response(mf_te)
-    X_te   <- model.matrix(obj$terms, mf_te, na.action = na.pass)
-    
-    ## 🔑 HERE is the snippet you asked about:
-    # Make test design matrix compatible with training cols
-    train_cols <- obj$fit_obj$colnames
-    miss <- setdiff(train_cols, colnames(X_te))
-    if (length(miss)) {
-      X_te <- cbind(
-        X_te,
-        matrix(0, nrow(X_te), length(miss),
-               dimnames = list(NULL, miss))
-      )
-    }
-    # Now align column order
-    X_te <- X_te[, train_cols, drop = FALSE]
-    ## 🔑 snippet ends
-    
-    y_pred <- as.numeric(X_te %*% obj$fit_obj$coef)
-    mspe_values[fold] <- mean((y_true - y_pred)^2)
-    mape_values[fold] <- mean(abs((y_true - y_pred) / y_true))
+  if (method == "CC") {
+    data_used <- na.omit(data)
+  } else {
+    data_used <- data
   }
   
-  avg_coef <- mean(coefs, na.rm = TRUE)
-  se <- sd(coefs, na.rm = TRUE) / sqrt(sum(!is.na(coefs)))
-  CI <- c(avg_coef - (1.96 * se), avg_coef + (1.96 * se))
+  n <- nrow(data_used)
+  if (n < k) stop("Not enough rows for the requested number of folds.")
+  
+  folds <- sample(rep(1:k, length.out = n))
+  
+  acc_vec  <- numeric(k)
+  prec_vec <- numeric(k)
+  rec_vec  <- numeric(k)
+  f1_vec   <- numeric(k)
+  auc_vec  <- numeric(k)
+  
+  for (i in seq_len(k)) {
+    test_idx  <- which(folds == i)
+    train_idx <- which(folds != i)
+    
+    train_dat <- data_used[train_idx, , drop = FALSE]
+    test_dat  <- data_used[test_idx,  , drop = FALSE]
+    
+    if (method == "CC") {
+      form <- reformulate(setdiff(names(train_dat), yName), response = yName)
+      fit  <- lm(form, data = train_dat)
+      
+      y_true  <- test_dat[[yName]]
+      y_score <- as.numeric(predict(fit, newdata = test_dat))
+    } else {
+      holdout_set <- test_idx
+      obj <- lm_ac(data_used, yName = yName, holdout = holdout_set, ...)
+      
+      te_raw <- obj$testing_data
+      mf_te  <- model.frame(obj$terms, te_raw, na.action = na.omit)
+      if (nrow(mf_te) == 0L) {
+        acc_vec[i]  <- NA_real_
+        prec_vec[i] <- NA_real_
+        rec_vec[i]  <- NA_real_
+        f1_vec[i]   <- NA_real_
+        auc_vec[i]  <- NA_real_
+        next
+      }
+      
+      y_true <- model.response(mf_te)
+      X_te   <- model.matrix(obj$terms, mf_te, na.action = na.pass)
+      X_te   <- X_te[, obj$fit_obj$colnames, drop = FALSE]
+      y_score <- as.numeric(X_te %*% obj$fit_obj$coef)
+    }
+    
+    if (is.factor(y_true)) {
+      if (nlevels(y_true) != 2L) stop("For k-fold CV classification, y must be binary.")
+      y_bin <- as.integer(y_true == levels(y_true)[2L])
+    } else {
+      y_bin <- as.integer(y_true)
+    }
+    
+    m <- classification_report(
+      y_true = y_bin,
+      y_score = y_score,
+      threshold = threshold,
+      header = NULL,
+      quiet = TRUE
+    )
+    
+    acc_vec[i]  <- m$accuracy
+    prec_vec[i] <- m$precision
+    rec_vec[i]  <- m$recall
+    f1_vec[i]   <- m$f1
+    auc_vec[i]  <- m$auc
+  }
   
   list(
-    coef_mean     = avg_coef,
-    coef_se       = se,
-    coef_CI       = CI,
-    coefs         = coefs,
-    mspe          = mean(mspe_values, na.rm = TRUE),
-    mape          = mean(mape_values, na.rm = TRUE),
-    mspe_per_fold = mspe_values,
-    mape_per_fold = mape_values,
-    folds         = fold_ids
+    accuracy_mean  = mean(acc_vec,  na.rm = TRUE),
+    precision_mean = mean(prec_vec, na.rm = TRUE),
+    recall_mean    = mean(rec_vec,  na.rm = TRUE),
+    f1_mean        = mean(f1_vec,   na.rm = TRUE),
+    auc_mean       = mean(auc_vec,  na.rm = TRUE),
+    
+    accuracy  = acc_vec,
+    precision = prec_vec,
+    recall    = rec_vec,
+    f1        = f1_vec,
+    auc       = auc_vec
+  )
+}
+
+kfold_regression <- function(
+    data,
+    yName,
+    k      = 5,
+    method = c("AC", "CC"),
+    seed   = 42,
+    ...
+) {
+  method <- match.arg(method)
+  set.seed(seed)
+  
+  if (k < 2) stop("k must be at least 2.")
+  
+  if (method == "CC") {
+    data_used <- na.omit(data)
+  } else {
+    data_used <- data
+  }
+  
+  n <- nrow(data_used)
+  if (n < k) stop("Not enough rows for the requested number of folds.")
+  
+  folds <- sample(rep(1:k, length.out = n))
+  
+  mse_vec  <- numeric(k)
+  rmse_vec <- numeric(k)
+  mae_vec  <- numeric(k)
+  r2_vec   <- numeric(k)
+  
+  for (i in seq_len(k)) {
+    test_idx  <- which(folds == i)
+    train_idx <- which(folds != i)
+    
+    train_dat <- data_used[train_idx, , drop = FALSE]
+    test_dat  <- data_used[test_idx,  , drop = FALSE]
+    
+    if (method == "CC") {
+      form <- reformulate(setdiff(names(train_dat), yName), response = yName)
+      fit  <- lm(form, data = train_dat)
+      
+      y_true <- test_dat[[yName]]
+      y_pred <- as.numeric(predict(fit, newdata = test_dat))
+    } else {
+      holdout_set <- test_idx
+      obj <- lm_ac(data_used, yName = yName, holdout = holdout_set, ...)
+      
+      te_raw <- obj$testing_data
+      mf_te  <- model.frame(obj$terms, te_raw, na.action = na.omit)
+      if (nrow(mf_te) == 0L) {
+        mse_vec[i]  <- NA_real_
+        rmse_vec[i] <- NA_real_
+        mae_vec[i]  <- NA_real_
+        r2_vec[i]   <- NA_real_
+        next
+      }
+      
+      y_true <- model.response(mf_te)
+      te_clean <- mf_te
+      y_pred <- predict(obj, te_clean)
+    }
+    
+    m <- metrics_regression(y_true, y_pred)
+    mse_vec[i]  <- m["MSE"]
+    rmse_vec[i] <- m["RMSE"]
+    mae_vec[i]  <- m["MAE"]
+    r2_vec[i]   <- m["R2"]
+  }
+  
+  list(
+    MSE_mean  = mean(mse_vec,  na.rm = TRUE),
+    RMSE_mean = mean(rmse_vec, na.rm = TRUE),
+    MAE_mean  = mean(mae_vec,  na.rm = TRUE),
+    R2_mean   = mean(r2_vec,   na.rm = TRUE),
+    
+    MSE  = mse_vec,
+    RMSE = rmse_vec,
+    MAE  = mae_vec,
+    R2   = r2_vec
   )
 }
