@@ -148,7 +148,7 @@ bootstrap <- function(
   n <- nrow(data)
   set.seed(123)
   
-  # Step 2: Create k folds
+  # Create k folds
   fold_ids <- sample(rep(1:k, length.out = n))
   
   # Initialize storage
@@ -156,17 +156,17 @@ bootstrap <- function(
   train_missing_list <- vector("list", k)
   validation_missing_list <- vector("list", k)
   
-  # Step 3-8: Loop through each fold
+  # Loop through each fold
   for (i in 1:k) {
     cat("\n=== Processing fold", i, "of", k, "===\n")
     
-    # Step 3: Split data
+    # Split data
     train <- data[fold_ids != i, ]
     validation <- data[fold_ids == i, ]
     
     cat("Train size:", nrow(train), "| Validation size:", nrow(validation), "\n")
     
-    # Step 4: Preprocess data
+    # Preprocess data
     preprocessed <- preprocess_data(
       train = train,
       validation = validation,
@@ -177,14 +177,14 @@ bootstrap <- function(
     train <- preprocessed$train
     validation <- preprocessed$validation
     
-    # Step 7: Store missingness before removing NAs
+    # Store missingness before removing NAs
     train_missing_list[[i]] <- missing_percent(train)
     validation_missing_list[[i]] <- missing_percent(validation)
     
-    # Step 5: Fit model using lm_prefill
+    # Fit model using lm_prefill
+    
     cat("Fitting model...\n")
-    lm_model <- tryCatch({
-      lm_prefill(
+    lm_model <- lm_prefill(
         train,
         yName,  
         impute_method = impute_method,
@@ -192,12 +192,6 @@ bootstrap <- function(
         use_dummies = use_dummies,
         ...
       )
-    }, error = function(e) {
-      cat("ERROR fitting model in fold", i, ":\n")
-      cat("Error message:", conditionMessage(e), "\n")
-      print(e)
-      return(NULL)
-    })
     
     if (is.null(lm_model)) {
       cat("Skipping fold", i, "due to model fitting error\n")
@@ -206,7 +200,7 @@ bootstrap <- function(
     
     cat("Model fitted successfully\n")
     
-    # Step 6: Filter validation data before prediction
+    # Filter validation data before prediction
     # Remove incomplete rows
     validation_complete <- validation[complete.cases(validation), ]
     
@@ -226,7 +220,7 @@ bootstrap <- function(
     validation_pred <- validation_pred[, train_cols, drop = FALSE]
     
     cat("Predicting...\n")
-    # Step 6: Predict
+    # Predict
     # Predict
     predictions <- predict(lm_prefill_model, newdata = validation_pred)
     
@@ -237,10 +231,10 @@ bootstrap <- function(
     
     cat("Predictions made successfully. Length:", length(predictions), "\n")
     
-    # Step 8: Get true values (already filtered to complete cases)
+    # Get true values (already filtered to complete cases)
     true_values <- validation_complete[[yName]]
     
-    # Step 9: Compute metrics based on task
+    # Compute metrics based on task
     if (task == "classification") {
       predicted_class <- ifelse(predictions > 0.5, 1, 0)
       metric_results[[i]] <- compute_metrics_classification(
@@ -253,7 +247,7 @@ bootstrap <- function(
     }
   }
   
-  # Step 9: Compute average metrics
+  # Compute average metrics
   # Filter out NULL results from failed folds
   valid_results <- metric_results[!sapply(metric_results, is.null)]
   
@@ -461,3 +455,4 @@ predict.lm_prefill <- function(object, newdata, type = "response", ...) {
 #lm_obj <- lm_prefill(data,"mpg",method = "mice", m = 5)
 #summary(lm_obj)      # calls summary.lm_prefill()
 #predict(lm_obj, newdata)  # calls predict.lm_prefill()
+
