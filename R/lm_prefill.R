@@ -22,63 +22,268 @@ detect_and_prepare_noms <- function(data, use_dummies = FALSE) {
   }
   list(data = data, noms = noms)
 }
+# ==============================================================================
+# PREPROCESSING FUNCTION
+# ==============================================================================
 
-# Performs bootstrap estimate of standard error 
-bootstrap <- function(data, yName, impute_method = "mice", m = 5, coef_name, reps = 100, holdout_size = 0.2, use_dummies = FALSE, ...) {
-  coefs <- numeric(reps)
-  mspe_values <- numeric(reps)
-  mape_values <- numeric(reps)
-  size <- holdout_size * nrow(data)
-
-  for(i in 1:reps) {
-    holdout_set <- sample(nrow(data), size = size)
-
-    obj <- lm_prefill(data, yName, impute_method = "mice", m = 5, use_dummies = use_dummies, holdout = holdout_set, ...)
-
-    if (impute_method == "complete" || impute_method == "missforest") {
-      coefs[i] <- coef(obj$fit_obj)[coef_name]
-      
-    } else if (impute_method == "mice") {
-      values <- sapply(obj$fit_obj$analyses, function(fit) coef(fit)[coef_name])
-      coefs[i] <- mean(values)
-      
-    } else if (impute_method == "amelia") {
-      values <- sapply(obj$fit_obj, function(fit) coef(fit)[coef_name])
-      coefs[i] <- mean(values)
-      
-    } else {
-      stop("Unknown imputation method.")
-  }
-    # Calculate prediction errors
-    y_actual <- obj$testing_data[[yName]]
-    y_pred <- predict.lm_prefill(obj, newdata = obj$testing_data)
-
-    mspe_values[i] <- mean((y_actual - y_pred)^2)
-    mape_values[i] <- mean(abs((y_actual - y_pred) / y_actual))
-  }
-
-  # Calculate confidence interval
-  avg_coef <- mean(coefs)
+preprocess_data <- function(
+    train,
+    validation,
+    target,
+    task = c("classification", "regression"),
+    categorical_cols = NULL
+) {
+  task <- match.arg(task)
   
-  se <- sd(coefs) / sqrt(reps)
-  CI <- c(avg_coef - (1.96 * se), avg_coef + (1.96 * se))
-
-  # Summarize results
-  results <- list(
-    coef_mean = avg_coef,
-    coef_se = se,
-    coef_CI = CI,
-    coefs = coefs,
-    mspe = mean(mspe_values),
-    mape = mean(mape_values)
-  )
-  return(results)
+  # Classification-specific preprocessing
+  if (task == "classification" && !is.null(categorical_cols)) {
+    for (col in categorical_cols) {
+      # Convert to character for manipulation
+      train[[col]] <- as.character(train[[col]])
+      validation[[col]] <- as.character(validation[[col]])
+      
+      # Identify rare levels in training (frequency < 10)
+      freq <- table(train[[col]])
+      rare_levels <- names(freq[freq < 10])
+      
+      # Replace rare levels with "Other" in training
+      train[[col]][train[[col]] %in% rare_levels] <- "Other"
+      
+      # Replace rare levels with "Other" in validation
+      validation[[col]][validation[[col]] %in% rare_levels] <- "Other"
+      
+      # Align levels: both train and validation should have same factor levels
+      lvls <- union(unique(train[[col]]), "Other")
+      train[[col]] <- factor(train[[col]], levels = lvls)
+      validation[[col]] <- factor(validation[[col]], levels = lvls)
+    }
+  }
+  
+  # Regression: ensure numeric columns are numeric
+  if (task == "regression") {
+    numeric_cols <- setdiff(names(train), c(target, categorical_cols))
+    for (col in numeric_cols) {
+      if (!is.numeric(train[[col]])) {
+        train[[col]] <- as.numeric(as.character(train[[col]]))
+      }
+      if (!is.numeric(validation[[col]])) {
+        validation[[col]] <- as.numeric(as.character(validation[[col]]))
+      }
+    }
+  }
+  
+  return(list(train = train, validation = validation))
 }
 
+# ==============================================================================
+# METRICS FUNCTIONS
+# ==============================================================================
+
+compute_metrics_classification <- function(true, pred_class, pred_prob) {
+  true_pos <- sum(pred_class == 1 & true == 1)
+  false_pos <- sum(pred_class == 1 & true == 0)
+  true_neg <- sum(pred_class == 0 & true == 0)
+  false_neg <- sum(pred_class == 0 & true == 1)
+  
+  div <- function(a, b) ifelse(b == 0, NA, a / b)
+  
+  accuracy  <- div(true_pos + true_neg, true_pos + false_pos + true_neg + false_neg)
+  precision <- div(true_pos, true_pos + false_pos)
+  recall    <- div(true_pos, true_pos + false_neg)
+  f1        <- div(2 * precision * recall, precision + recall)
+  
+  return(list(
+    accuracy = accuracy,
+    precision = precision,
+    recall = recall,
+    f1 = f1
+  ))
+}
+
+compute_metrics_regression <- function(true, pred) {
+  mse <- mean((true - pred)^2)
+  rmse <- sqrt(mse)
+  mae <- mean(abs(true - pred))
+  r_squared <- 1 - sum((true - pred)^2) / sum((true - mean(true))^2)
+  
+  return(list(
+    mse = mse,
+    rmse = rmse,
+    mae = mae,
+    r_squared = r_squared
+  ))
+}
+
+# Helper function to calculate missingness percentage
+missing_percent <- function(df) {
+  sapply(df, function(col) {
+    sum(is.na(col)) / length(col) * 100
+  })
+}
+
+# ==============================================================================
+# BOOTSTRAP FUNCTION
+# ==============================================================================
+
+bootstrap <- function(
+    data,
+    yName,
+    task = c("classification", "regression"),
+    categorical_cols = NULL,
+    impute_method = "mice",
+    m = 5,
+    k = 5,
+    use_dummies = FALSE,
+    ...
+) {
+  
+  task <- match.arg(task)
+  
+  # Validate inputs
+  if (!yName %in% names(data)) {
+    stop("Target variable '", yName, "' not found in data. Available columns: ", 
+         paste(names(data), collapse = ", "))
+  }
+  
+  n <- nrow(data)
+  set.seed(123)
+  
+  # Step 2: Create k folds
+  fold_ids <- sample(rep(1:k, length.out = n))
+  
+  # Initialize storage
+  metric_results <- vector("list", k)
+  train_missing_list <- vector("list", k)
+  validation_missing_list <- vector("list", k)
+  
+  # Step 3-8: Loop through each fold
+  for (i in 1:k) {
+    cat("\n=== Processing fold", i, "of", k, "===\n")
+    
+    # Step 3: Split data
+    train <- data[fold_ids != i, ]
+    validation <- data[fold_ids == i, ]
+    
+    cat("Train size:", nrow(train), "| Validation size:", nrow(validation), "\n")
+    
+    # Step 4: Preprocess data
+    preprocessed <- preprocess_data(
+      train = train,
+      validation = validation,
+      target = yName,
+      task = task,
+      categorical_cols = categorical_cols
+    )
+    train <- preprocessed$train
+    validation <- preprocessed$validation
+    
+    # Step 7: Store missingness before removing NAs
+    train_missing_list[[i]] <- missing_percent(train)
+    validation_missing_list[[i]] <- missing_percent(validation)
+    
+    # Step 5: Fit model using lm_prefill
+    cat("Fitting model...\n")
+    lm_model <- tryCatch({
+      lm_prefill(
+        train,
+        yName,  
+        impute_method = impute_method,
+        m = m,
+        use_dummies = use_dummies,
+        ...
+      )
+    }, error = function(e) {
+      cat("ERROR fitting model in fold", i, ":\n")
+      cat("Error message:", conditionMessage(e), "\n")
+      print(e)
+      return(NULL)
+    })
+    
+    if (is.null(lm_model)) {
+      cat("Skipping fold", i, "due to model fitting error\n")
+      next
+    }
+    
+    cat("Model fitted successfully\n")
+    
+    # Step 6: Filter validation data before prediction
+    # Remove incomplete rows
+    validation_complete <- validation[complete.cases(validation), ]
+    
+    cat("Complete validation cases:", nrow(validation_complete), "\n")
+    
+    if (nrow(validation_complete) == 0) {
+      cat("No complete cases in validation fold", i, ", skipping\n")
+      next
+    }
+    
+    # Prepare data for prediction (remove target)
+    validation_pred <- validation_complete
+    validation_pred[[yName]] <- NULL  
+    
+    # Ensure validation_pred has the same structure as training data (minus target)
+    train_cols <- setdiff(names(train), yName)
+    validation_pred <- validation_pred[, train_cols, drop = FALSE]
+    
+    cat("Predicting...\n")
+    # Step 6: Predict
+    # Predict
+    predictions <- predict(lm_prefill_model, newdata = validation_pred)
+    
+    if (is.null(predictions)) {
+      cat("Skipping fold", i, "due to prediction error\n")
+      next
+    }
+    
+    cat("Predictions made successfully. Length:", length(predictions), "\n")
+    
+    # Step 8: Get true values (already filtered to complete cases)
+    true_values <- validation_complete[[yName]]
+    
+    # Step 9: Compute metrics based on task
+    if (task == "classification") {
+      predicted_class <- ifelse(predictions > 0.5, 1, 0)
+      metric_results[[i]] <- compute_metrics_classification(
+        true_values,
+        predicted_class,
+        predictions
+      )
+    } else {
+      metric_results[[i]] <- compute_metrics_regression(true_values, predictions)
+    }
+  }
+  
+  # Step 9: Compute average metrics
+  # Filter out NULL results from failed folds
+  valid_results <- metric_results[!sapply(metric_results, is.null)]
+  
+  if (length(valid_results) == 0) {
+    stop("All folds failed. Cannot compute metrics.")
+  }
+  
+  if (length(valid_results) < k) {
+    cat("Warning:", k - length(valid_results), "folds failed\n")
+  }
+  
+  metrics_df <- do.call(rbind, lapply(valid_results, as.data.frame))
+  avg_metrics <- colMeans(metrics_df, na.rm = TRUE)
+  
+  # Average missingness across folds
+  avg_train_missing <- colMeans(do.call(rbind, train_missing_list), na.rm = TRUE)
+  avg_validation_missing <- colMeans(do.call(rbind, validation_missing_list), na.rm = TRUE)
+  
+  # Return results
+  return(list(
+    metrics = avg_metrics,
+    metrics_per_fold = metrics_df,
+    train_missing = avg_train_missing,
+    validation_missing = avg_validation_missing
+  ))
+}
 # Internal constructor
 lm_prefill_create <- function(data, yName, holdout = NULL) {
   formula <- reformulate(".", response = yName)
-
+  
   if (!is.null(holdout)) {
     if (is.logical(holdout) && length(holdout) == nrow(data)) {
       training_data <- data[!holdout, 1:ncol(data), drop = FALSE]
@@ -94,6 +299,9 @@ lm_prefill_create <- function(data, yName, holdout = NULL) {
     training_data <- data
     testing_data <- NULL
   }
+  
+  # drop NAs in testing data
+  testing_data <- na.omit(testing_data)
   obj <- list(
     data = training_data,
     testing_data = testing_data,
