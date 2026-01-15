@@ -1,4 +1,4 @@
-library("lm_ac.R")
+library(mvPred)
 
 compute_auc <- function(y_true, scores) {
   y_true <- as.integer(y_true)
