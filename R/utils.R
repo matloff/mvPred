@@ -110,39 +110,87 @@ classification_report <- function(
 }
 
 # ------------------------------------------------------------
+# Helper: collapse rare factor levels in training data
+# - Replaces low-frequency levels with "Other".
+# - Applied to TRAIN only to avoid data leakage.
+# ------------------------------------------------------------
+collapse_rare_levels_train <- function(
+    train_df,
+    cols,
+    threshold = 10L,
+    other_label = "Other"
+) {
+  if (length(cols) == 0L) return(train_df)
+  
+  for (col in cols) {
+    x_chr <- as.character(train_df[[col]])
+    freq <- table(x_chr, useNA = "no")
+    rare_levels <- names(freq[freq < threshold])
+    
+    x_chr[x_chr %in% rare_levels] <- other_label
+    
+    x_fac <- factor(x_chr)
+    
+    # Ensure "Other" exists as a level even if not used
+    if (!(other_label %in% levels(x_fac))) {
+      levels(x_fac) <- c(levels(x_fac), other_label)
+    }
+    
+    train_df[[col]] <- x_fac
+  }
+  
+  train_df
+}
+
+# ------------------------------------------------------------
 # Helper: align test factor levels to training factor levels
 # - If train has a factor column, force test to that factor's levels.
 # - Any unseen test level becomes NA, so model.frame(..., na.omit)
 #   can drop those rows before prediction/scoring.
 # ------------------------------------------------------------
-align_test_levels_to_train <- function(train_dat, test_dat, yName) {
-  pred_names <- setdiff(names(train_dat), yName)
+align_test_levels_to_train <- function(
+    test_df,
+    train_df,
+    cols,
+    other_label = "Other"
+) {
+  if (length(cols) == 0L) return(test_df)
   
-  for (nm in pred_names) {
-    if (is.factor(train_dat[[nm]])) {
-      
-      # Ensure test is factor-like
-      if (is.character(test_dat[[nm]]) || is.logical(test_dat[[nm]])) {
-        test_dat[[nm]] <- as.factor(test_dat[[nm]])
-      } else if (!is.factor(test_dat[[nm]])) {
-        test_dat[[nm]] <- as.factor(test_dat[[nm]])
-      }
-      
-      train_lvls <- levels(train_dat[[nm]])
-      test_chr   <- as.character(test_dat[[nm]])
-      
-      # Unseen levels -> NA
-      unseen <- !(test_chr %in% train_lvls)
-      if (any(unseen, na.rm = TRUE)) {
-        test_chr[unseen] <- NA_character_
-      }
-      
-      test_dat[[nm]] <- factor(test_chr, levels = train_lvls)
+  for (col in cols) {
+    if (!is.factor(train_df[[col]])) next
+    
+    tr_levels <- levels(train_df[[col]])
+    if (!(other_label %in% tr_levels)) tr_levels <- c(tr_levels, other_label)
+    
+    te_chr <- as.character(test_df[[col]])
+    te_chr[!(te_chr %in% tr_levels) & !is.na(te_chr)] <- other_label
+    
+    test_df[[col]] <- factor(te_chr, levels = tr_levels)
+  }
+  
+  test_df
+}
+
+# ------------------------------------------------------------
+# Helper: detect categorical predictors
+# - Converts character/logical predictors to factors.
+# - Excludes the response variable (yName).
+# - Returns updated data and names of categorical predictors.
+# ------------------------------------------------------------
+get_categorical_predictors <- function(df, yName) {
+  preds <- setdiff(names(df), yName)
+  
+  # Convert character/logical predictors to factor so we detect them
+  for (nm in preds) {
+    if (is.character(df[[nm]]) || is.logical(df[[nm]])) {
+      df[[nm]] <- as.factor(df[[nm]])
     }
   }
   
-  test_dat
+  cat_cols <- preds[vapply(df[preds], is.factor, logical(1))]
+  list(df = df, cat_cols = cat_cols)
 }
+
 
 # ------------------------------------------------------------
 # Unified bootstrap(): k-fold CV for regression OR classification
@@ -158,7 +206,7 @@ bootstrap <- function(
     task = c("regression", "classification"),
     
     # Missing-data / fitting strategy
-    method = c("AC", "CC", "PREFILL"),
+    method = c("AC", "CC", "PREFILL", "TOWER"),
     
     # Classification-specific
     threshold = 0.5,
@@ -168,8 +216,16 @@ bootstrap <- function(
     
     # PREFILL-specific arguments
     impute_method = c("mice", "amelia", "missforest", "complete"),
+    mice_method = NULL,     # mice-specific
     m = 5,
     use_dummies = FALSE,
+    
+    # TOWER-specific arguments
+    tower_regFtnName = "lm",
+    tower_opts       = list(),
+    tower_scaling    = NULL,
+    tower_yesYVal    = NULL,
+
     ...
 ) {
   task   <- match.arg(task)
@@ -216,26 +272,42 @@ bootstrap <- function(
     train_dat <- data_used[train_idx, , drop = FALSE]
     test_dat  <- data_used[test_idx,  , drop = FALSE]
     
+    # ------------------------------------------------------------
+    # Fold-wise categorical preprocessing (NO leakage)
+    # - Convert character/logical -> factor (predictors only)
+    # - Identify categorical predictors
+    # - Collapse rare levels in TRAIN
+    # - Align TEST levels to TRAIN levels (unseen -> "Other")
+    # ------------------------------------------------------------
+    tmp_tr <- get_categorical_predictors(train_dat, yName)
+    train_dat <- tmp_tr$df
+    cat_cols  <- tmp_tr$cat_cols
+    
+    tmp_te <- get_categorical_predictors(test_dat, yName)
+    test_dat <- tmp_te$df
+    
+    train_dat <- collapse_rare_levels_train(
+      train_df = train_dat,
+      cols = cat_cols,
+      threshold = 10L,
+      other_label = "Other"
+    )
+    test_dat <- align_test_levels_to_train(
+      test_df = test_dat,
+      train_df = train_dat,
+      cols = cat_cols,
+      other_label = "Other"
+    )
+    
     # -------------------------
     # CC path
     # -------------------------
     if (method == "CC") {
       form <- reformulate(setdiff(names(train_dat), yName), response = yName)
       
-      # Convert character/logical predictors to factor in train
-      for (nm in setdiff(names(train_dat), yName)) {
-        if (is.character(train_dat[[nm]]) || is.logical(train_dat[[nm]])) {
-          train_dat[[nm]] <- as.factor(train_dat[[nm]])
-        }
-      }
+      # Build model.frame on TEST and drop rows with any NA 
+      mf_te <- model.frame(form, test_dat, na.action = na.omit)
       
-      # Align TEST factor levels to TRAIN factor levels; unseen -> NA
-      test_dat2 <- align_test_levels_to_train(train_dat, test_dat, yName)
-      
-      # Build model.frame on TEST and drop rows that became NA (unseen levels, etc.)
-      mf_te <- model.frame(form, test_dat2, na.action = na.omit)
-      
-      # If no scorable rows remain in this fold, store NAs and continue
       if (nrow(mf_te) == 0L) {
         if (task == "classification") {
           acc_vec[i]  <- NA_real_
@@ -253,23 +325,21 @@ bootstrap <- function(
       }
       
       if (task == "classification") {
-        # Logistic regression for CC classification
         fit <- glm(form, data = train_dat, family = binomial())
         
         y_true  <- model.response(mf_te)
         y_score <- as.numeric(predict(fit, newdata = mf_te, type = "response"))
       } else {
-        # Linear regression for CC regression
         fit <- lm(form, data = train_dat)
         
         y_true <- model.response(mf_te)
         y_pred <- as.numeric(predict(fit, newdata = mf_te))
       }
       
+    } else if (method == "AC") {
       # -------------------------
       # AC path
       # -------------------------
-    } else if (method == "AC") {
       obj <- lm_ac(data_used, yName = yName, holdout = test_idx, ...)
       
       te_raw <- obj$testing_data
@@ -299,65 +369,140 @@ bootstrap <- function(
         y_pred <- as.numeric(predict(obj, mf_te))
       }
       
+    } else if (method == "TOWER") {
+      # -------------------------
+      # TOWER path (lm_tower)
+      # -------------------------
+      
+      # y may have NAs in test; drop those rows for scoring only
+      y_all <- test_dat[[yName]]
+      ok_y  <- !is.na(y_all)
+      
+      if (!any(ok_y)) {
+        if (task == "classification") {
+          acc_vec[i]  <- NA_real_
+          prec_vec[i] <- NA_real_
+          rec_vec[i]  <- NA_real_
+          f1_vec[i]   <- NA_real_
+          auc_vec[i]  <- NA_real_
+        } else {
+          mse_vec[i]  <- NA_real_
+          rmse_vec[i] <- NA_real_
+          mae_vec[i]  <- NA_real_
+          r2_vec[i]   <- NA_real_
+        }
+        next
+      }
+      
+      # Fit tower on TRAIN
+      fit_tw <- lm_tower(
+        train_dat,
+        yName      = yName,
+        regFtnName = tower_regFtnName,
+        opts       = tower_opts,
+        scaling    = tower_scaling,
+        yesYVal    = tower_yesYVal
+      )
+      
+      # Prepare test predictors 
+      x_te <- test_dat[ok_y, , drop = FALSE]
+      x_te[[yName]] <- NULL
+      
+      # Predict
+      if (task == "classification") {
+        y_true  <- y_all[ok_y]
+        y_score <- as.numeric(predict(fit_tw, newdata = x_te))
+      } else {
+        y_true <- y_all[ok_y]
+        y_pred <- as.numeric(predict(fit_tw, newdata = x_te))
+      } 
     } else {
       # -------------------------
       # PREFILL path (lm_prefill)
       # -------------------------
-      
-      # 1) Normalize impute_method (case-insensitive)
       impute_method <- tolower(impute_method)
       impute_method <- match.arg(impute_method)
       
-      # 2) Force m to be a single positive integer
       m_int <- suppressWarnings(as.integer(m)[1L])
       if (is.na(m_int) || m_int < 1L) stop("m must be a positive integer scalar (e.g., m = 5).")
       
-      preds_all <- setdiff(names(data_used), yName)
+      # Capture user-specified args (e.g., method="pmm") and forward them
+      dots <- list(...)
+      
+      # Forward mice_method as mice::mice(method=...)
+      if (impute_method == "mice" && !is.null(mice_method)) {
+        dots$method <- mice_method
+      }
+      
+      # Split fold
+      train_fold <- data_used[train_idx, , drop = FALSE]
+      test_fold  <- data_used[test_idx,  , drop = FALSE]
+      
+      # Convert predictors to factor where needed
+      preds_all <- setdiff(names(train_fold), yName)
       for (nm in preds_all) {
-        if (is.character(data_used[[nm]]) || is.logical(data_used[[nm]])) {
-          data_used[[nm]] <- as.factor(data_used[[nm]])
+        if (is.character(train_fold[[nm]]) || is.logical(train_fold[[nm]])) {
+          train_fold[[nm]] <- as.factor(train_fold[[nm]])
+        }
+        if (is.character(test_fold[[nm]]) || is.logical(test_fold[[nm]])) {
+          test_fold[[nm]] <- as.factor(test_fold[[nm]])
         }
       }
       
-      # Run lm_prefill
-      obj_pf <- lm_prefill(
-        data_used,
+      # Identify categorical predictors based on TRAIN
+      tmp_tr <- get_categorical_predictors(train_fold, yName)
+      train_fold <- tmp_tr$df
+      cat_cols   <- tmp_tr$cat_cols
+      
+      # Collapse rare levels in TRAIN, align TEST to TRAIN
+      train_fold <- collapse_rare_levels_train(
+        train_df = train_fold,
+        cols = cat_cols,
+        threshold = 10L,
+        other_label = "Other"
+      )
+      test_fold <- align_test_levels_to_train(
+        test_df = test_fold,
+        train_df = train_fold,
+        cols = cat_cols,
+        other_label = "Other"
+      )
+      
+      # Rebuild data_fold with factor levels shrunk to TRAIN levels
+      data_fold <- data_used
+      
+      # Put back non-categorical columns normally
+      data_fold[train_idx, ] <- train_fold
+      data_fold[test_idx,  ] <- test_fold
+      
+      # Now forcibly rebuild each categorical column with TRAIN's levels only
+      for (col in cat_cols) {
+        lv <- levels(train_fold[[col]])  # includes "Other" from helper
+        
+        col_chr <- rep(NA_character_, nrow(data_fold))
+        col_chr[train_idx] <- as.character(train_fold[[col]])
+        col_chr[test_idx]  <- as.character(test_fold[[col]])
+        
+        data_fold[[col]] <- factor(col_chr, levels = lv)
+      }
+      
+      if (impute_method == "mice" && is.null(dots$nnet.MaxNWts)) {
+        dots$nnet.MaxNWts <- 50000
+      }
+      
+      args_pf <- c(list(
+        data_fold,
         yName = yName,
         impute_method = impute_method,
         m = m_int,
         use_dummies = use_dummies,
-        holdout = test_idx,
-        ...
-      )
+        holdout = test_idx
+      ), dots)
       
-      # Training split used by lm_prefill (use for factor level alignment)
-      train_pf <- obj_pf$data
+      obj_pf <- do.call(lm_prefill, args_pf)
       
-      # Ensure train_pf has factor types 
-      preds_pf <- setdiff(names(train_pf), yName)
-      for (nm in preds_pf) {
-        if (is.character(train_pf[[nm]]) || is.logical(train_pf[[nm]])) {
-          train_pf[[nm]] <- as.factor(train_pf[[nm]])
-        }
-      }
-      
-      # Raw test split from lm_prefill
       te_raw <- obj_pf$testing_data
-      
-      # Coerce test predictor types to factor when applcable
-      for (nm in preds_pf) {
-        if (is.factor(train_pf[[nm]])) {
-          if (is.character(te_raw[[nm]]) || is.logical(te_raw[[nm]]) || !is.factor(te_raw[[nm]])) {
-            te_raw[[nm]] <- as.factor(te_raw[[nm]])
-          }
-        }
-      }
-      
-      # Align test factor levels to training factor levels (unseen → NA)
-      te_aligned <- align_test_levels_to_train(train_pf, te_raw, yName)
-      
-      # Build test model.frame using lm_prefill's formula; drop rows made NA by alignment
-      mf_te <- model.frame(obj_pf$formula, te_aligned, na.action = na.omit)
+      mf_te  <- model.frame(obj_pf$formula, te_raw, na.action = na.omit)
       
       if (nrow(mf_te) == 0L) {
         if (task == "classification") {
@@ -378,18 +523,17 @@ bootstrap <- function(
       y_true <- model.response(mf_te)
       
       if (task == "classification") {
-        # lm_prefill currently fits lm(); treat output as score until glm support is added
         y_score <- as.numeric(predict(obj_pf, newdata = mf_te))
       } else {
         y_pred  <- as.numeric(predict(obj_pf, newdata = mf_te))
       }
     }
     
+    
     # -------------------------
-    # Metrics 
+    # Metrics
     # -------------------------
     if (task == "classification") {
-      # Convert y_true to {0,1}
       if (is.factor(y_true)) {
         if (nlevels(y_true) != 2L) stop("Classification requires a binary response.")
         y_bin <- as.integer(y_true == levels(y_true)[2L])

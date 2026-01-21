@@ -3,9 +3,11 @@ suppressPackageStartupMessages({
   library(Amelia)
   library(mice)
   library(missForest)
+  library(toweranNA)
 })
 
-source("../R/utils.R")
+source("~/MS Project lm_ac/lm_AC.R")
+source("~/MS Project lm_ac/utils.R")
 
 set.seed(42)
 
@@ -45,10 +47,13 @@ adult$native_country[adult$native_country == "Holand-Netherlands"] <- NA
 #    (avoid Amelia collinearity issues + unnecessary columns)
 df_adult <- subset(adult, select = -c(income, education, fnlwgt))
 
+# If you want to also drop native_country, uncomment:
+# df_adult <- subset(adult, select = -c(income, education, fnlwgt, native_country))
+
 cat("\nAdult rows:", nrow(df_adult), " | cols:", ncol(df_adult), "\n")
 
 # -----------------------------
-# Adult: CC (Classification) 
+# Adult: CC (Classification)
 # -----------------------------
 cat("\n==============================\n")
 cat("Adult Income | CC | Classification\n")
@@ -64,7 +69,7 @@ res_adult_cc <- bootstrap(
 print(res_adult_cc)
 
 # -----------------------------
-# Adult: AC (Classification)
+# Adult: AC (Classification) 
 # -----------------------------
 cat("\n==============================\n")
 cat("Adult Income | AC | Classification\n")
@@ -91,7 +96,7 @@ res_adult_pf_mf <- bootstrap(
   k = 5,
   task = "classification",
   method = "PREFILL",
-  impute_method = "missforest",
+  impute_method = "missforest",    
   m = 5,
   use_dummies = FALSE,
   threshold = 0.5
@@ -124,6 +129,7 @@ res_adult_pf_mice <- bootstrap(
   task = "classification",
   method = "PREFILL",
   impute_method = "mice",
+  mice_method = "pmm",
   m = 5,
   use_dummies = FALSE,
   threshold = 0.5
@@ -140,11 +146,33 @@ res_adult_pf_complete <- bootstrap(
   task = "classification",
   method = "PREFILL",
   impute_method = "complete",
-  m = 1,             
+  m = 1,                 # complete doesn't need m, but keep scalar int
   use_dummies = FALSE,
   threshold = 0.5
 )
 print(res_adult_pf_complete)
+
+# -----------------------------
+# Adult: TOWER (Classification) 
+# -----------------------------
+cat("\n==============================\n")
+cat("Adult Income | TOWER | Classification (lm scores for now)\n")
+cat("==============================\n")
+res_adult_tower <- bootstrap(
+  df_adult,
+  yName = "income_num",
+  k = 5,
+  task = "classification",
+  method = "TOWER",
+  threshold = 0.5,
+  
+  # tower args
+  tower_regFtnName = "lm",
+  tower_opts       = list(),
+  tower_scaling    = NULL,
+  tower_yesYVal    = NULL
+)
+print(res_adult_tower)
 
 # ------------------------------------------------------------
 # 2) mtcars mpg (Regression)
@@ -185,7 +213,7 @@ res_mtcars_pf_complete <- bootstrap(
   task = "regression",
   method = "PREFILL",
   impute_method = "complete",
-  m = 1,                 
+  m = 1,                 # scalar int
   use_dummies = FALSE
 )
 print(res_mtcars_pf_complete)
@@ -215,6 +243,7 @@ res_mtcars_pf_mice <- bootstrap(
   task = "regression",
   method = "PREFILL",
   impute_method = "mice",
+  mice_method = "pmm",  
   m = 5,
   use_dummies = FALSE
 )
@@ -234,3 +263,24 @@ res_mtcars_pf_amelia <- bootstrap(
   use_dummies = FALSE
 )
 print(res_mtcars_pf_amelia)
+
+# -----------------------------
+# mtcars: TOWER (Regression)
+# -----------------------------
+cat("\n==============================\n")
+cat("mtcars | TOWER | Regression (mpg)\n")
+cat("==============================\n")
+res_mtcars_tower <- bootstrap(
+  df_mtcars,
+  yName = "mpg",
+  k = 5,
+  task = "regression",
+  method = "TOWER",
+  
+  # tower args
+  tower_regFtnName = "lm",
+  tower_opts       = list(),
+  tower_scaling    = NULL,
+  tower_yesYVal    = NULL
+)
+print(res_mtcars_tower)
