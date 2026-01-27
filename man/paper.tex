@@ -1,0 +1,188 @@
+\documentclass[10pt,twocolumn]{article}
+
+% ======================
+% Packages
+% ======================
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{geometry}
+\usepackage{times}
+
+\geometry{
+    left=0.75in,
+    right=0.75in,
+    top=1in,
+    bottom=1in
+}
+
+\setlength{\columnsep}{0.25in}
+
+% ======================
+% Title Information
+% ======================
+\title{\bfseries Prediction-Oriented Methods in Handling Missing Data}
+\author{
+    Alekya Veluri \\
+    University of California, Davis \\
+    \texttt{aveluri@ucdavis.edu}
+    \and
+    Norman Matloff \\
+    University of California, Davis \\
+    \texttt{nsmatloff@ucdavis.edu}
+    \and
+    Cynthia Mascarenhas \\
+    University of California, Davis \\
+    \texttt{cynmascarenhas@ucdavis.edu}
+    \and
+    Billy Ouattara \\
+    University of California, Davis \\
+    \texttt{btouattara@ucdavis.edu}
+}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Missing data pose a fundamental challenge in predictive modeling, as they can substantially degrade model performance and limit generalization to unseen data. While numerous techniques exist to address missingness, including imputation-based and in-place methods, their impact on predictive performance is often evaluated in isolation. In this work, we adopt a prediction-oriented perspective and systematically evaluate multiple missing-data handling strategies. We benchmark a range of established methods, such as multiple imputation, and available-cases approaches, across several real-world datasets with varying missingness patterns. Additionally, we introduce an R package that provides a unified interface for applying and comparing these methods within predictive workflows.
+\end{abstract}
+% ======================
+% 1. Introduction
+% ======================
+\section{Introduction}
+Predictive models rely heavily on the availability and quality of data to learn underlying patterns and generalize to unseen instances. Missing values present a significant challenge in this context, as common practices such as discarding incomplete observations reduce the effective training sample size. This reduction can eliminate important variability in the data, potentially introducing bias and degrading model performance. Moreover, training on smaller or less representative datasets can increase susceptibility to both overfitting and underfitting. Thus, ultimately limiting the reliability of predictive models. One widely used approach, complete-case, addresses missing data by retaining only observations with no missing values across all features. Beyond complete-case(CC), several imputation-based approaches have been proposed to address missing data. Multiple imputation methods such as MICE iteratively model each variable with missing values conditional on the remaining variables using chained regression models, generating multiple completed datasets that reflect imputation uncertainty. Amelia adopts a joint modeling approach, assuming a multivariate normal distribution and drawing imputations via a bootstrap-based EM algorithm. While these methods are widely used for inference, they are primarily designed as preprocessing tools and do not directly support prediction for new observations with missing values. In contrast, towerNA is a non-imputational, prediction-oriented method that leverages regression averaging based on the Tower Property of conditional expectation to directly predict outcomes for cases with arbitrary missingness patterns. Another prediction-oriented approach is available-cases(AC) regression, which estimates model parameters by computing the normal equations using pairwise-available observations, thereby retaining partial information from incomplete cases without explicitly imputing missing values.
+
+\subsection{Contributions}
+In contrast to prior work that emphasizes parameter recovery under missingness, our focus is on predictive performance, evaluating how well models trained using different missing-data strategies generalize to new observations. We assess these methods across both continuous and categorical outcomes using linear and logistic regression. This study aims to provide practitioners with a clear understanding of the trade-offs among different missing-data handling approaches and to support informed method selection through our \textit{mvPred} R package.
+% \begin{itemize}
+%     \item Contribution 1
+%     \item Contribution 2
+%     \item Contribution 3
+% \end{itemize}
+
+% ======================
+% 2. Related Work
+% ======================
+\section{Related Work}
+Discuss prior work and positioning.
+
+% ======================
+% 3. Background
+% ======================
+\section{Background}
+Theory, notation, or preliminaries if needed.
+
+% ======================
+% 4. Methodology
+% ======================
+\section{Methodology}
+
+\subsection{Problem Setup}
+Define the regression task and assumptions.
+
+\subsection{Proposed Method}
+Our package provides two complementary approaches for handling missing values: imputation-based methods and prediction-oriented methods. The imputation-based approach includes established techniques such as Amelia, MICE, and missForest, which first fill in missing entries before model fitting. In contrast, the prediction-oriented approach avoids explicit imputation and instead relies on strategies such as the available-cases (AC) principle or the tower method, which directly construct predictive models using partially observed data.
+
+\subsubsection{lm\_ac}
+
+The \texttt{lm\_ac} method implements linear regression using the \emph{available-cases} (AC) principle, a form of pairwise deletion designed to handle missing values without explicit imputation. Rather than discarding entire observations that contain missing entries, \texttt{lm\_ac} constructs the normal equations using all available information on a term-by-term basis.
+
+Specifically, let $X$ denote the design matrix and $y$ the response vector. In the presence of missing values, the standard ordinary least squares estimator,
+\[
+\hat{\beta} = (X^\top X)^{-1} X^\top y,
+\]
+cannot be computed directly. The \texttt{lm\_ac} method addresses this by estimating each element of $X^\top X$ and $X^\top y$ using only those observations for which the required variables are jointly observed.
+
+For each pair of predictors $(j,k)$, the $(j,k)$ entry of $X^\top X$ is computed as the average of $x_{ij}x_{ik}$ over all observations $i$ for which both $x_{ij}$ and $x_{ik}$ are observed. Similarly, each entry of $X^\top y$ is computed as the average of $x_{ij}y_i$ over all observations where both $x_{ij}$ and $y_i$ are observed. These available-case averages are then assembled into estimated system matrices, and the regression coefficients are obtained by solving the resulting normal equations.
+
+This approach allows \texttt{lm\_ac} to exploit partially observed data more efficiently than complete-case analysis, which restricts estimation to observations with no missing values across all predictors. While the available-cases method may introduce bias under certain missingness mechanisms, it provides a simple, computationally efficient, and prediction-oriented alternative to imputation-based methods, particularly when the goal is predictive performance rather than parameter recovery.
+
+\textbf{This section is to be fixed, put into the right subsection} - The singular error occurs in lm\_ac when the pairwise-available estimate of the normal-equations matrix X'X is not full rank and therefore cannot be inverted. This happens because lm\_ac computes each entry of X'X using only the rows where the corresponding pair of variables is jointly observed. As a result, different entries of the matrix are based on different subsets of the data, which removes the algebraic guarantees (such as positive definiteness) that hold for the standard complete-case X'X. When predictors are highly correlated, constant within a fold, or effectively redundant after dummy encoding, the resulting system matrix can become singular.
+
+This issue is most likely to occur with high-dimensional designs that include categorical predictors with many levels (for example, native\_country) and when data are split into folds. In some folds, certain factor levels may be absent or appear only a few times, producing dummy variables with little or no variation. Combined with pairwise deletion, this sparsity can introduce exact linear dependencies in the averaged cross-product matrix, causing solve() to fail. In contrast, complete-case regression typically avoids this problem because it constructs X'X from a single, common set of rows and automatically drops aliased columns, preserving invertibility.
+
+% \subsection{Algorithm}
+% \begin{algorithm}[H]
+% \caption{Algorithm Name}
+% \begin{algorithmic}
+% \STATE Initialize parameters
+% \STATE Compute sufficient statistics
+% \STATE Solve optimization problem
+% \end{algorithmic}
+% \end{algorithm}
+
+
+\subsubsection{lm\_prefill}
+\subsubsection{lm\_tower}
+
+
+
+% ======================
+% 5. Implementation
+% ======================
+\section{Implementation}
+Practical considerations and system design.
+
+% ======================
+% 6. Experimental Setup
+% ======================
+\section{Experimental Setup}
+
+\subsection{Datasets}
+Describe datasets.
+
+\subsection{Baselines}
+Describe comparison methods.
+
+\subsection{Evaluation Metrics}
+Describe metrics used.
+
+\subsection{Experimental Protocol}
+Cross-validation, splits, etc.
+
+% ======================
+% 7. Results
+% ======================
+\section{Results}
+Present tables and figures.
+
+% ======================
+% 8. Discussion
+% ======================
+\section{Discussion}
+Interpret results.
+
+% ======================
+% 9. Limitations
+% ======================
+\section{Limitations}
+Discuss constraints and assumptions.
+
+% ======================
+% 10. Conclusion and Future Work
+% ======================
+\section{Conclusion and Future Work}
+Summarize contributions and outline next steps.
+
+% ======================
+% References
+% ======================
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+% ======================
+% Appendix
+% ======================
+\appendix
+\section{Additional Results}
+Supplementary material.
+
+\end{document}
