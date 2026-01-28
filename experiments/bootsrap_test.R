@@ -6,8 +6,7 @@ suppressPackageStartupMessages({
   library(toweranNA)
 })
 
-source("~/MS Project lm_ac/lm_AC.R")
-source("~/MS Project lm_ac/utils.R")
+source("../R/utils.R")
 
 set.seed(42)
 
