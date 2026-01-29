@@ -21,6 +21,7 @@ run_cc_ac_tower_prefill <- function(
     tower_scaling = NULL,
     tower_yesYVal = NULL
 ) {
+  # if (!is.data.frame(df)) df <- as.data.frame(df)
   df <- as.data.frame(df)
 
   if (!(yName %in% names(df))) stop(sprintf("[%s] yName '%s' not found.", dataset_name, yName))
@@ -126,27 +127,57 @@ run_cc_ac_tower_prefill <- function(
 # Load datasets + targets
 # -----------------------------
 
-df_mpg <- mtcars
+# 1) mpg (mtcars)
+auto_path <- "../data/auto-mpg.data"
+
+auto_cols <- c(
+  "mpg", "cylinders", "displacement", "horsepower",
+  "weight", "acceleration", "model_year", "origin", "car_name"
+)
+
+df_auto <- read.table(
+  auto_path,
+  col.names = auto_cols,
+  na.strings = "?",
+  stringsAsFactors = FALSE
+)
+
+# Drop non-numeric ID column
+df_auto$car_name <- NULL
+
+# Coerce to numeric 
+for (nm in names(df_auto)) {
+  suppressWarnings(df_auto[[nm]] <- as.numeric(df_auto[[nm]]))
+}
+
 y_mpg  <- "mpg"
 
+# 2) tao
 df_tao <- VIM::tao
 y_tao  <- "Sea.Surface.Temp"
 
+# 3) sleep
 df_sleep <- VIM::sleep
 y_sleep  <- "BrainWgt"
 
+# 4) wine: ONLY points predictor, price target
 df_wine <- tryCatch(VIM::wine, error = function(e) NULL)
 if (is.null(df_wine)) df_wine <- tryCatch(qeML::wine, error = function(e) NULL)
 if (is.null(df_wine)) stop("Could not find 'wine' in VIM or qeML.")
 
-if (!("price" %in% names(df_wine)))  stop("wine: column 'price' not found.")
-if (!("points" %in% names(df_wine))) stop("wine: column 'points' not found.")
+need_cols <- c("price", "points", "taster_twitter_handle")
+miss_cols <- setdiff(need_cols, names(df_wine))
+if (length(miss_cols)) stop("wine: missing columns: ", paste(miss_cols, collapse = ", "))
 
 df_wine_pp <- data.frame(
-  price  = df_wine[["price"]],
+  price = df_wine[["price"]],
   points = df_wine[["points"]],
-  dummy  = rnorm(nrow(df_wine)) # To be removed later. Added it so I can run tower
+  taster_twitter_handle = df_wine[["taster_twitter_handle"]]
 )
+
+# Ensure handle is treated as a factor (important for model.matrix / dummies)
+df_wine_pp$taster_twitter_handle <- as.factor(df_wine_pp$taster_twitter_handle)
+
 y_wine <- "price"
 
 # ------------------------------------------------------------
@@ -178,7 +209,7 @@ for (nm in names(df_cc)) {
   suppressWarnings(df_cc[[nm]] <- as.numeric(df_cc[[nm]]))
 }
 
-# Drop ID columns only (KEEP LEMAS)
+# Drop ID columns only
 id_cols <- intersect(
   c("state", "county", "community", "communityname", "fold"),
   names(df_cc)
@@ -194,20 +225,20 @@ load("../data/english.RData")
 
 df_english2 <- data.frame(
   age   = english[["age"]],
-  vocab = english[["vocab"]],
-  dummy = rnorm(nrow(english)) # To be removed later. Added it so I can run tower
+  mom_ed = english[["mom_ed"]],
+  vocab = english[["vocab"]]
 )
 y_english <- "vocab"
 
 # ------------------------------------------------------------
 # NHkids
 # ------------------------------------------------------------
-load("../data/NHkids.RData")  
+load("../data/NHkids.RData")   
 
 df_nhkids2 <- data.frame(
-  weight = NHkids[["Weight"]],
-  height = NHkids[["Height"]],
-  dummy  = rnorm(nrow(NHkids)) # To be removed later. Added it so I can run tower
+  AgeMonths = NHkids[["AgeMonths"]],
+  weight    = NHkids[["Weight"]],
+  height    = NHkids[["Height"]]
 )
 y_nhkids <- "Weight"
 
@@ -215,11 +246,11 @@ y_nhkids <- "Weight"
 # Run study
 # -----------------------------
 all_results <- rbind(
-  run_cc_ac_tower_prefill(df_mpg,     y_mpg,     "mpg (mtcars)"),
+  run_cc_ac_tower_prefill(df_auto,     y_mpg,     "mpg"),
   run_cc_ac_tower_prefill(df_tao,     y_tao,     "tao"),
   run_cc_ac_tower_prefill(df_sleep,   y_sleep,   "sleep"),
-  run_cc_ac_tower_prefill(df_wine_pp, y_wine,    "wine (price ~ points only)"),
-  run_cc_ac_tower_prefill(df_english2,    y_english,    "english (vocab ~ age)"),
-  run_cc_ac_tower_prefill(df_nhkids,      y_nhkids,     "NHkids (weight)"),
+  run_cc_ac_tower_prefill(df_wine_pp, y_wine,    "wine"),
+  run_cc_ac_tower_prefill(df_english2,    y_english,    "english"),
+  run_cc_ac_tower_prefill(df_nhkids,      y_nhkids,     "NHkids"),
   run_cc_ac_tower_prefill(df_commcrime,   y_commcrime,  "Communities & Crime")
 )

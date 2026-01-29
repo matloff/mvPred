@@ -1,96 +1,130 @@
-# Load implementations for available-case regression and imputation-based
-# regression source("lm_AC_2.R")       # Contains the lm_ac() function using
-# available-case analysis source("lm_prefill.R")    # Contains the lm_prefill()
-# function for imputing missing data before modeling 
+source("R/utils.R") 
 
-# Fallback operator: if `a` is not NULL, return `a`; otherwise, return `b` 
-`%||%` <- function(a, b) if (!is.null(a)) a else b
+# Compare multiple methods using bootstrap() and return a summary table.                                                                                                                                                 
+lm_compare <- function(                                                                                                                                                                                                  
+  data,                                                                                                                                                                                                                  
+  predictors = NULL,                                                                                                                                                                                                     
+  yName,                                                                                                                                                                                                                 
+  k = 5,                                                                                                                                                                                                                 
+  task = c("regression", "classification"),                                                                                                                                                                              
+  methods = c("CC", "AC", "TOWER", "PREFILL"),                                                                                                                                                                           
+  seed = 42,                                                                                                                                                                                                             
+  # PREFILL options                                                                                                                                                                                                      
+  impute_method = c("mice", "amelia", "missforest", "complete"),                                                                                                                                                         
+  mice_method = NULL,                                                                                                                                                                                                    
+  m = 5,                                                                                                                                                                                                                 
+  use_dummies = FALSE,                                                                                                                                                                                                   
+  # TOWER options                                                                                                                                                                                                        
+  tower_regFtnName = "lm",                                                                                                                                                                                               
+  tower_opts = list(),                                                                                                                                                                                                   
+  tower_scaling = NULL,                                                                                                                                                                                                  
+  tower_yesYVal = NULL,                                                                                                                                                                                                  
+  ...                                                                                                                                                                                                                    
+) {                                                                                                                                                                                                                      
+  task <- match.arg(task)                                                                                                                                                                                                
+  impute_method <- match.arg(impute_method)                                                                                                                                                                              
+                                                                                                                                                                                                                          
+  df <- as.data.frame(data)                                                                                                                                                                                              
+  if (!(yName %in% names(df))) stop(paste("Column", yName, "not found in data."))                                                                                                                                        
+                                                                                                                                                                                                                          
+  if (is.null(predictors)) {                                                                                                                                                                                             
+    predictors <- setdiff(names(df), yName)                                                                                                                                                                              
+  }                                                                                                                                                                                                                      
+  missing_preds <- setdiff(predictors, names(df))                                                                                                                                                                        
+  if (length(missing_preds) > 0) {                                                                                                                                                                                       
+    stop(paste("Predictors not found in data:", paste(missing_preds, collapse = ", ")))                                                                                                                                  
+  }                                                                                                                                                                                                                      
+                                                                                                                                                                                                                          
+  df <- df[, c(yName, predictors), drop = FALSE]                                                                                                                                                                         
+                                                                                                                                                                                                                          
+  # Drop rows with missing y for ALL methods (matches benchmark behavior)                                                                                                                                                
+  df <- df[!is.na(df[[yName]]), , drop = FALSE]                                                                                                                                                                          
+                                                                                                                                                                                                                          
+  if (nrow(df) < k) {                                                                                                                                                                                                    
+    if (task == "classification") {                                                                                                                                                                                      
+      return(data.frame(                                                                                                                                                                                                 
+        method = methods,                                                                                                                                                                                                
+        accuracy_mean = NA_real_,                                                                                                                                                                                        
+        precision_mean = NA_real_,                                                                                                                                                                                       
+        recall_mean = NA_real_,                                                                                                                                                                                          
+        f1_mean = NA_real_,                                                                                                                                                                                              
+        auc_mean = NA_real_,                                                                                                                                                                                             
+        n = nrow(df),                                                                                                                                                                                                    
+        stringsAsFactors = FALSE                                                                                                                                                                                         
+      ))                                                                                                                                                                                                                 
+    }                                                                                                                                                                                                                    
+    return(data.frame(                                                                                                                                                                                                   
+      method = methods,
+      MSE_mean = NA_real_,                                                                                                                                                                                               
+      RMSE_mean = NA_real_,                                                                                                                                                                                              
+      MAE_mean = NA_real_,                                                                                                                                                                                               
+      R2_mean = NA_real_,                                                                                                                                                                                                
+      n = nrow(df),                                                                                                                                                                                                      
+      stringsAsFactors = FALSE                                                                                                                                                                                           
+    ))                                                                                                                                                                                                                   
+  }                                                                                                                                                                                                                      
+                                                                                                                                                                                                                          
+  dots <- list(...)                                                                                                                                                                                                      
+                                                                                                                                                                                                                          
+  run_one <- function(method) {                                                                                                                                                                                          
+    args <- list(                                                                                                                                                                                                        
+      data = df,                                                                                                                                                                                                         
+      yName = yName,                                                                                                                                                                                                     
+      k = k,                                                                                                                                                                                                             
+      task = task,                                                                                                                                                                                                       
+      method = method,                                                                                                                                                                                                   
+      seed = seed                                                                                                                                                                                                        
+    )                                                                                                                                                                                                                    
+                                                                                                                                                                                                                          
+    if (method == "PREFILL") {                                                                                                                                                                                           
+      args$impute_method <- impute_method                                                                                                                                                                                
+      args$mice_method <- mice_method                                                                                                                                                                                    
+      args$m <- m                                                                                                                                                                                                        
+      args$use_dummies <- use_dummies                                                                                                                                                                                    
+    }                                                                                                                                                                                                                    
+                                                                                                                                                                                                                          
+    if (method == "TOWER") {                                                                                                                                                                                             
+      args$tower_regFtnName <- tower_regFtnName                                                                                                                                                                          
+      args$tower_opts <- tower_opts                                                                                                                                                                                      
+      args$tower_scaling <- tower_scaling                                                                                                                                                                                
+      args$tower_yesYVal <- tower_yesYVal                                                                                                                                                                                
+    }                                                                                                                                                                                                                    
+                                                                                                                                                                                                                          
+    if (length(dots) > 0) {                                                                                                                                                                                              
+      args <- c(args, dots)                                                                                                                                                                                              
+    }                                                                                                                                                                                                                    
+                                                                                                                                                                                                                          
+    tryCatch(                                                                                                                                                                                                            
+      do.call(bootstrap, args),                                                                                                                                                                                          
+      error = function(e) {
+        warning(sprintf("Method %s failed: %s", method, e$message))                                                                                                                                                      
+        NULL                                                                                                                                                                                                             
+      }                                                                                                                                                                                                                  
+    )                                                                                                                                                                                                                    
+  }                                                                                                                                                                                                                      
+                                                                                                                                                                                                                          
+  res_list <- lapply(methods, run_one)                                                                                                                                                                                   
+                                                                                                                                                                                                                          
+  if (task == "classification") {                                                                                                                                                                                        
+    out <- data.frame(                                                                                                                                                                                                   
+      method = methods,                                                                                                                                                                                                  
+      accuracy_mean = vapply(res_list, function(r) if (is.null(r)) NA_real_ else r$accuracy_mean, numeric(1)),                                                                                                           
+      precision_mean = vapply(res_list, function(r) if (is.null(r)) NA_real_ else r$precision_mean, numeric(1)),                                                                                                         
+      auc_mean = vapply(res_list, function(r) if (is.null(r)) NA_real_ else r$auc_mean, numeric(1)),
+      n = nrow(df),
+      stringsAsFactors = FALSE
+    )
+  } else {
+    out <- data.frame(
+      method = methods,
+      MSE_mean = vapply(res_list, function(r) if (is.null(r)) NA_real_ else r$MSE_mean, numeric(1)),
+      RMSE_mean = vapply(res_list, function(r) if (is.null(r)) NA_real_ else r$RMSE_mean, numeric(1)),
+      MAE_mean = vapply(res_list, function(r) if (is.null(r)) NA_real_ else r$MAE_mean, numeric(1)),
+      R2_mean = vapply(res_list, function(r) if (is.null(r)) NA_real_ else r$R2_mean, numeric(1)),
+      n = nrow(df),
+      stringsAsFactors = FALSE
+    )
+  }
 
-# Function to compare the performance of various fitted regression models
-lm_compare <- function(models, yName,
-                       metrics = c("rmse", "r2", "beta")) {
-  
-  rmse <- function(y, y_hat) sqrt(mean((y - y_hat)^2))
-  r2   <- function(y, y_hat) 1 - sum((y - y_hat)^2) /
-    sum((y - mean(y))^2)
-  
-  preds <- list(); betas <- list()
-  
-  for (nm in names(models)) {
-    mdl <- models[[nm]]
-    test <- mdl$testing_data
-    if (is.null(test)) {
-      warning(paste("Model", nm, "has no testing_data. Skipping."))
-      next
-    }
-    
-    ## Predictions
-    preds[[nm]] <- predict(mdl, newdata = test)
-    
-    ## Coefficients (works for both lm_ac and pooled‑MI objects)
-    if (inherits(mdl, "lm_ac")) {
-      beta <- mdl$fit_obj$coef
-      names(beta) <- mdl$fit_obj$colnames
-      betas[[nm]] <- beta
-    } else if (inherits(mdl, "lm_prefill")) {
-      if (!is.null(mdl$fit_obj$analyses)) {          # “mice” list
-        fits <- mdl$fit_obj$analyses
-        betas[[nm]] <- Reduce("+", lapply(fits, coef)) / length(fits)
-      } else if (is.list(mdl$fit_obj)) {             # list of lm objects
-        fits <- mdl$fit_obj
-        betas[[nm]] <- Reduce("+", lapply(fits, coef)) / length(fits)
-      } else {                                       # single lm
-        betas[[nm]] <- coef(mdl$fit_obj)
-      }
-    }
-  }
-  
-  out <- list()
-  
-  if ("rmse" %in% metrics) {
-    out$RMSE <- mapply(function(p, nm)
-      rmse(models[[nm]]$testing_data[[yName]], p),
-      preds, names(preds))
-  }
-  
-  if ("r2" %in% metrics) {
-    out$R2 <- mapply(function(p, nm)
-      r2(models[[nm]]$testing_data[[yName]], p),
-      preds, names(preds))
-  }
-  
-  if ("beta" %in% metrics) {
-    all_terms <- Reduce(union, lapply(betas, names))
-    beta_df   <- data.frame(term = all_terms)
-    for (nm in names(betas))
-      beta_df[[nm]] <- betas[[nm]][all_terms]
-    out$Beta <- beta_df
-  }
-  
   out
 }
-
-
-# data(airquality)
-# set.seed(42)
-
-# n   <- nrow(airquality)
-# idx <- sample(n, size = floor(0.20 * n))    # 20 % hold‑out row numbers
-
-# holdout_vec <- rep(FALSE, n)
-# holdout_vec[idx] <- TRUE
-
-# ## Fit the models
-# model_ac  <- lm_ac(airquality, "Ozone", holdout = holdout_vec)
-# model_pre <- lm_prefill(airquality, "Ozone",
-#                         impute_method = "mice", m = 5,
-#                         holdout = holdout_vec)
-
-# ## Compare
-# results <- lm_compare(list(ac = model_ac,
-#                            prefill = model_pre),
-#                       yName = "Ozone")
-
-# results$RMSE
-# results$R2
-# results$Beta
