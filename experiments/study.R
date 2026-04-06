@@ -5,8 +5,8 @@ suppressPackageStartupMessages({
   library(qeML)
 })
 
-source("~/MS Project lm_ac/lm_AC.R")
-source("~/MS Project lm_ac/utils.R")
+source("../R/lm_AC.R")
+source("../R/utils.R")
 set.seed(42)
 
 # -----------------------------
@@ -129,7 +129,7 @@ run_cc_ac_tower_prefill <- function(
 # -----------------------------
 
 # 1) mpg (mtcars)
-auto_path <- "~/MS Project lm_ac/auto-mpg.data"
+auto_path <- "../data/auto-mpg.data"
 
 auto_cols <- c(
   "mpg", "cylinders", "displacement", "horsepower",
@@ -181,50 +181,10 @@ df_wine_pp$taster_twitter_handle <- as.factor(df_wine_pp$taster_twitter_handle)
 
 y_wine <- "price"
 
-# head(df_wine_pp, 10)
-
-# ------------------------------------------------------------
-# Communities & Crime
-# ------------------------------------------------------------
-cc_data  <- "~/MS Project lm_ac/communities.data"
-cc_names <- "~/MS Project lm_ac/communities.names"
-
-# Parse column names
-nm_lines <- readLines(cc_names, warn = FALSE)
-attr_lines <- grep("^@attribute\\s+", nm_lines, value = TRUE)
-col_names <- sub("^@attribute\\s+([^ ]+)\\s+.*$", "\\1", attr_lines)
-
-# Read data
-df_cc <- read.csv(
-  cc_data,
-  header = FALSE,
-  na.strings = "?",
-  stringsAsFactors = FALSE
-)
-
-# Assign names
-if (ncol(df_cc) == length(col_names)) {
-  names(df_cc) <- col_names
-}
-
-# Coerce to numeric
-for (nm in names(df_cc)) {
-  suppressWarnings(df_cc[[nm]] <- as.numeric(df_cc[[nm]]))
-}
-
-# Drop ID columns only (KEEP LEMAS)
-id_cols <- intersect(
-  c("state", "county", "community", "communityname", "fold"),
-  names(df_cc)
-)
-df_commcrime <- df_cc[, setdiff(names(df_cc), id_cols), drop = FALSE]
-
-y_commcrime <- "ViolentCrimesPerPop"
-
 # ------------------------------------------------------------
 # english
 # ------------------------------------------------------------
-load("~/MS Project lm_ac/english.RData")   # loads object: english
+load("../data/english.RData")   # loads object: english
 
 df_english2 <- data.frame(
   age   = english[["age"]],
@@ -239,14 +199,14 @@ y_english <- "vocab"
 # ------------------------------------------------------------
 # NHkids
 # ------------------------------------------------------------
-load("~/MS Project lm_ac/NHkids.RData")   # loads object: NHkids
+load("../data/NHkids.RData")   # loads object: NHkids
 
-df_nhkids2 <- data.frame(
+df_nhkids <- data.frame(
   AgeMonths = NHkids[["AgeMonths"]],
   weight    = NHkids[["Weight"]],
   height    = NHkids[["Height"]]
 )
-y_nhkids <- "Weight"
+y_nhkids <- "weight"
 
 # -----------------------------
 # Run study
@@ -257,18 +217,8 @@ all_results <- rbind(
   run_cc_ac_tower_prefill(df_sleep,   y_sleep,   "sleep"),
   run_cc_ac_tower_prefill(df_wine_pp, y_wine,    "wine"),
   run_cc_ac_tower_prefill(df_english2,    y_english,    "english"),
-  run_cc_ac_tower_prefill(df_nhkids,      y_nhkids,     "NHkids"),
-  run_cc_ac_tower_prefill(df_commcrime,   y_commcrime,  "Communities & Crime")
+  run_cc_ac_tower_prefill(df_nhkids,      y_nhkids,     "NHkids")
 )
-
-source("~/MS Project lm_ac/communities_crime_diagnose.R")
-
-diag <- diagnose_dataset(
-  df    = df_commcrime,
-  yName = "ViolentCrimesPerPop"
-)
-
-cat(readLines(diag$report_path), sep = "\n")
 
 
 cat("\n\n====================\n")

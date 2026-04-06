@@ -247,6 +247,11 @@ bootstrap <- function(
   folds <- sample(rep(1:k, length.out = n))
   
   # -----------------------------
+  # Missingness storage for test folds
+  # -----------------------------
+  test_missing_tables <- vector("list", k)
+  
+  # -----------------------------
   # Metric storage
   # -----------------------------
   if (task == "classification") {
@@ -271,6 +276,23 @@ bootstrap <- function(
     
     train_dat <- data_used[train_idx, , drop = FALSE]
     test_dat  <- data_used[test_idx,  , drop = FALSE]
+    
+    # -------------------------
+    # Test-fold missingness table
+    # - Includes predictors and target
+    # - Stores percent missingness for each column in this fold's test data
+    # -------------------------
+    test_missing_tables[[i]] <- data.frame(
+      fold = i,
+      variable = names(test_dat),
+      role = ifelse(names(test_dat) == yName, "target", "predictor"),
+      missing_pct = colMeans(is.na(test_dat)) * 100,
+      row.names = NULL,
+      stringsAsFactors = FALSE
+    )
+    
+    cat(sprintf("\nTest-data missingness for fold %d:\n", i))
+    print(test_missing_tables[[i]], row.names = FALSE)
     
     # ------------------------------------------------------------
     # Fold-wise categorical preprocessing (NO leakage)
@@ -565,6 +587,24 @@ bootstrap <- function(
   }
   
   # -----------------------------
+  # Average missingness across test folds
+  # -----------------------------
+  test_missing_all <- do.call(rbind, test_missing_tables)
+  
+  test_missing_average <- aggregate(
+    missing_pct ~ variable + role,
+    data = test_missing_all,
+    FUN = mean
+  )
+  
+  test_missing_average <- test_missing_average[
+    order(test_missing_average$role, test_missing_average$variable),
+  ]
+  
+  cat("\nAverage test-data missingness across folds:\n")
+  print(test_missing_average, row.names = FALSE)
+  
+  # -----------------------------
   # Output
   # -----------------------------
   if (task == "classification") {
@@ -584,7 +624,9 @@ bootstrap <- function(
       precision = prec_vec,
       recall    = rec_vec,
       f1        = f1_vec,
-      auc       = auc_vec
+      auc       = auc_vec,
+      test_missingness_by_fold = test_missing_tables,
+      test_missingness_average = test_missing_average
     )
   } else {
     list(
@@ -600,7 +642,9 @@ bootstrap <- function(
       MSE  = mse_vec,
       RMSE = rmse_vec,
       MAE  = mae_vec,
-      R2   = r2_vec
+      R2   = r2_vec,
+      test_missingness_by_fold = test_missing_tables,
+      test_missingness_average = test_missing_average
     )
   }
 }
