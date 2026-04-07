@@ -234,3 +234,5 @@ run_study <- function() {
   print(merged[, c("dataset","yName","method","n","RMSE_delta_vs_CC","MAE_delta_vs_CC","R2_delta_vs_CC")],
         row.names = FALSE)
 }
+
+run_study()
