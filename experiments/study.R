@@ -5,8 +5,6 @@ suppressPackageStartupMessages({
   library(qeML)
 })
 
-source("../R/lm_AC.R")
-source("../R/utils.R")
 set.seed(42)
 
 # -----------------------------
@@ -129,19 +127,9 @@ run_cc_ac_tower_prefill <- function(
 # -----------------------------
 
 # 1) mpg (mtcars)
-auto_path <- "../data/auto-mpg.data"
+data("auto_mpg", package = "mvPred")
 
-auto_cols <- c(
-  "mpg", "cylinders", "displacement", "horsepower",
-  "weight", "acceleration", "model_year", "origin", "car_name"
-)
-
-df_auto <- read.table(
-  auto_path,
-  col.names = auto_cols,
-  na.strings = "?",
-  stringsAsFactors = FALSE
-)
+df_auto <- auto_mpg
 
 # Drop non-numeric ID column
 df_auto$car_name <- NULL
@@ -184,7 +172,9 @@ y_wine <- "price"
 # ------------------------------------------------------------
 # english
 # ------------------------------------------------------------
-load("../data/english.RData")   # loads object: english
+# load("../data/english.RData")   # loads object: english
+
+data("english", package = "mvPred")
 
 df_english2 <- data.frame(
   age   = english[["age"]],
@@ -199,7 +189,9 @@ y_english <- "vocab"
 # ------------------------------------------------------------
 # NHkids
 # ------------------------------------------------------------
-load("../data/NHkids.RData")   # loads object: NHkids
+# load("../data/NHkids.RData")   # loads object: NHkids
+
+data("NHkids", package = "mvPred")
 
 df_nhkids <- data.frame(
   AgeMonths = NHkids[["AgeMonths"]],
@@ -211,32 +203,34 @@ y_nhkids <- "weight"
 # -----------------------------
 # Run study
 # -----------------------------
-all_results <- rbind(
-  run_cc_ac_tower_prefill(df_auto,     y_mpg,     "mpg"),
-  run_cc_ac_tower_prefill(df_tao,     y_tao,     "tao"),
-  run_cc_ac_tower_prefill(df_sleep,   y_sleep,   "sleep"),
-  run_cc_ac_tower_prefill(df_wine_pp, y_wine,    "wine"),
-  run_cc_ac_tower_prefill(df_english2,    y_english,    "english"),
-  run_cc_ac_tower_prefill(df_nhkids,      y_nhkids,     "NHkids")
-)
+run_study <- function() {
+  all_results <- rbind(
+    run_cc_ac_tower_prefill(df_auto,     y_mpg,     "mpg"),
+    run_cc_ac_tower_prefill(df_tao,     y_tao,     "tao"),
+    run_cc_ac_tower_prefill(df_sleep,   y_sleep,   "sleep"),
+    run_cc_ac_tower_prefill(df_wine_pp, y_wine,    "wine"),
+    run_cc_ac_tower_prefill(df_english2,    y_english,    "english"),
+    run_cc_ac_tower_prefill(df_nhkids,      y_nhkids,     "NHkids")
+  )
 
 
-cat("\n\n====================\n")
-cat("FINAL SUMMARY\n")
-cat("====================\n")
-print(all_results, row.names = FALSE)
+  cat("\n\n====================\n")
+  cat("FINAL SUMMARY\n")
+  cat("====================\n")
+  print(all_results, row.names = FALSE)
 
-# Deltas vs CC
-cc_base <- subset(all_results, method == "CC", select = c("dataset","yName","n","RMSE_mean","MAE_mean","R2_mean"))
-names(cc_base)[names(cc_base) %in% c("RMSE_mean","MAE_mean","R2_mean")] <- c("RMSE_cc","MAE_cc","R2_cc")
+  # Deltas vs CC
+  cc_base <- subset(all_results, method == "CC", select = c("dataset","yName","n","RMSE_mean","MAE_mean","R2_mean"))
+  names(cc_base)[names(cc_base) %in% c("RMSE_mean","MAE_mean","R2_mean")] <- c("RMSE_cc","MAE_cc","R2_cc")
 
-merged <- merge(all_results, cc_base, by = c("dataset","yName","n"), all.x = TRUE)
-merged$RMSE_delta_vs_CC <- merged$RMSE_mean - merged$RMSE_cc
-merged$MAE_delta_vs_CC  <- merged$MAE_mean  - merged$MAE_cc
-merged$R2_delta_vs_CC   <- merged$R2_mean   - merged$R2_cc
+  merged <- merge(all_results, cc_base, by = c("dataset","yName","n"), all.x = TRUE)
+  merged$RMSE_delta_vs_CC <- merged$RMSE_mean - merged$RMSE_cc
+  merged$MAE_delta_vs_CC  <- merged$MAE_mean  - merged$MAE_cc
+  merged$R2_delta_vs_CC   <- merged$R2_mean   - merged$R2_cc
 
-cat("\n\n====================\n")
-cat("DELTAS vs CC (negative RMSE/MAE is better; positive R2 is better)\n")
-cat("====================\n")
-print(merged[, c("dataset","yName","method","n","RMSE_delta_vs_CC","MAE_delta_vs_CC","R2_delta_vs_CC")],
-      row.names = FALSE)
+  cat("\n\n====================\n")
+  cat("DELTAS vs CC (negative RMSE/MAE is better; positive R2 is better)\n")
+  cat("====================\n")
+  print(merged[, c("dataset","yName","method","n","RMSE_delta_vs_CC","MAE_delta_vs_CC","R2_delta_vs_CC")],
+        row.names = FALSE)
+}
