@@ -277,7 +277,6 @@ bootstrap <- function(
     
     train_dat <- data_used[train_idx, , drop = FALSE]
     test_dat  <- data_used[test_idx,  , drop = FALSE]
-    test_missing_overall_vec[i] <- mean(is.na(test_dat)) * 100
     
     # -------------------------
     # Test-fold missingness table
@@ -592,7 +591,6 @@ bootstrap <- function(
   # Average missingness across test folds
   # -----------------------------
   test_missing_all <- do.call(rbind, test_missing_tables)
-  avg_test_missing_overall <- mean(test_missing_overall_vec, na.rm = TRUE)
   
   test_missing_average <- aggregate(
     missing_pct ~ variable + role,
@@ -647,8 +645,7 @@ bootstrap <- function(
       MAE  = mae_vec,
       R2   = r2_vec,
       test_missingness_by_fold = test_missing_tables,
-      test_missingness_average = test_missing_average,
-      avg_test_missing_overall = avg_test_missing_overall
+      test_missingness_average = test_missing_average
     )
   }
 }
