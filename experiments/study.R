@@ -49,7 +49,7 @@ run_cc_ac_tower_prefill <- function(
   cat("=====================================\n")
   
   # ---- CC ----
-  res_cc <- bootstrap(
+  res_cc <- mvPred::bootstrap(
     data = df,
     yName = yName,
     k = k,
@@ -58,7 +58,7 @@ run_cc_ac_tower_prefill <- function(
   )
   
   # ---- AC ----
-  res_ac <- bootstrap(
+  res_ac <- mvPred::bootstrap(
     data = df,
     yName = yName,
     k = k,
@@ -67,7 +67,7 @@ run_cc_ac_tower_prefill <- function(
   )
   
   # ---- TOWER ----
-  res_tw <- bootstrap(
+  res_tw <- mvPred::bootstrap(
     data = df,
     yName = yName,
     k = k,
@@ -80,7 +80,7 @@ run_cc_ac_tower_prefill <- function(
   )
   
   # ---- PREFILL (mice only) ----
-  res_pf_mice <- bootstrap(
+  res_pf_mice <- mvPred::bootstrap(
     data = df,
     yName = yName,
     k = k,
@@ -125,9 +125,8 @@ run_cc_ac_tower_prefill <- function(
 # -----------------------------
 # Load datasets + targets
 # -----------------------------
-
 # 1) mpg (mtcars)
-data("auto_mpg", package = "mvPred")
+data("auto-mpg", package = "mvPred")
 
 df_auto <- auto_mpg
 
@@ -172,8 +171,6 @@ y_wine <- "price"
 # ------------------------------------------------------------
 # english
 # ------------------------------------------------------------
-# load("../data/english.RData")   # loads object: english
-
 data("english", package = "mvPred")
 
 df_english2 <- data.frame(
@@ -189,8 +186,6 @@ y_english <- "vocab"
 # ------------------------------------------------------------
 # NHkids
 # ------------------------------------------------------------
-# load("../data/NHkids.RData")   # loads object: NHkids
-
 data("NHkids", package = "mvPred")
 
 df_nhkids <- data.frame(
