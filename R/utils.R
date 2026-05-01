@@ -302,7 +302,6 @@ bootstrap <- function(
   # Missingness storage for test folds
   # -----------------------------
   test_missing_tables <- vector("list", k)
-  test_missing_overall_vec <- numeric(k)
   
   # -----------------------------
   # Metric storage
