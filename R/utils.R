@@ -230,6 +230,7 @@ bootstrap <- function(
 ) {
   task   <- match.arg(task)
   method <- match.arg(method)
+  dots <- list(...)
   set.seed(seed)
   
   if (k < 2) stop("k must be at least 2.")
@@ -245,6 +246,57 @@ bootstrap <- function(
   if (n < k) stop("Not enough rows for the requested number of folds.")
   
   folds <- sample(rep(1:k, length.out = n))
+
+  fit_final_model <- function() {
+    if (method == "CC") {
+      form <- reformulate(setdiff(names(data_used), yName), response = yName)
+      if (task == "classification") {
+        return(stats::glm(form, data = data_used, family = stats::binomial()))
+      }
+      return(stats::lm(form, data = data_used))
+    }
+
+    if (method == "AC") {
+      return(do.call(lm_ac, c(list(data = data_used, yName = yName), dots)))
+    }
+
+    if (method == "TOWER") {
+      return(lm_tower(
+        data_used,
+        yName      = yName,
+        regFtnName = tower_regFtnName,
+        opts       = tower_opts,
+        scaling    = tower_scaling,
+        yesYVal    = tower_yesYVal
+      ))
+    }
+
+    impute_method_final <- tolower(impute_method)
+    impute_method_final <- match.arg(
+      impute_method_final,
+      choices = c("mice", "amelia", "missforest", "complete")
+    )
+    m_int <- suppressWarnings(as.integer(m)[1L])
+    if (is.na(m_int) || m_int < 1L) {
+      stop("m must be a positive integer scalar (e.g., m = 5).")
+    }
+
+    prefill_dots <- dots
+    if (impute_method_final == "mice" && !is.null(mice_method)) {
+      prefill_dots$method <- mice_method
+    }
+    if (impute_method_final == "mice" && is.null(prefill_dots$nnet.MaxNWts)) {
+      prefill_dots$nnet.MaxNWts <- 50000
+    }
+
+    do.call(lm_prefill, c(list(
+      data = data_used,
+      yName = yName,
+      impute_method = impute_method_final,
+      m = m_int,
+      use_dummies = use_dummies
+    ), prefill_dots))
+  }
   
   # -----------------------------
   # Missingness storage for test folds
@@ -449,9 +501,6 @@ bootstrap <- function(
       m_int <- suppressWarnings(as.integer(m)[1L])
       if (is.na(m_int) || m_int < 1L) stop("m must be a positive integer scalar (e.g., m = 5).")
       
-      # Capture user-specified args (e.g., method="pmm") and forward them
-      dots <- list(...)
-      
       # Forward mice_method as mice::mice(method=...)
       if (impute_method == "mice" && !is.null(mice_method)) {
         dots$method <- mice_method
@@ -604,6 +653,8 @@ bootstrap <- function(
   
   cat("\nAverage test-data missingness across folds:\n")
   print(test_missing_average, row.names = FALSE)
+
+  final_model <- fit_final_model()
   
   # -----------------------------
   # Output
@@ -626,6 +677,7 @@ bootstrap <- function(
       recall    = rec_vec,
       f1        = f1_vec,
       auc       = auc_vec,
+      final_model = final_model,
       test_missingness_by_fold = test_missing_tables,
       test_missingness_average = test_missing_average
     )
@@ -644,6 +696,7 @@ bootstrap <- function(
       RMSE = rmse_vec,
       MAE  = mae_vec,
       R2   = r2_vec,
+      final_model = final_model,
       test_missingness_by_fold = test_missing_tables,
       test_missingness_average = test_missing_average
     )
