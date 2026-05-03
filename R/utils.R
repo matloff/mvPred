@@ -300,9 +300,9 @@ bootstrap <- function(
   }
   
   # -----------------------------
-  # Missingness storage for test folds
+  # Missingness storage for fold splits
   # -----------------------------
-  test_missing_tables <- vector("list", k)
+  fold_missing_tables <- vector("list", k)
   
   # -----------------------------
   # Metric storage
@@ -331,21 +331,32 @@ bootstrap <- function(
     test_dat  <- data_used[test_idx,  , drop = FALSE]
     
     # -------------------------
-    # Test-fold missingness table
+    # Fold missingness table
     # - Includes predictors and target
-    # - Stores percent missingness for each column in this fold's test data
+    # - Stores percent missingness for both training and testing data
     # -------------------------
-    test_missing_tables[[i]] <- data.frame(
+    train_missing_tbl <- data.frame(
       fold = i,
+      split = "training",
+      variable = names(train_dat),
+      role = ifelse(names(train_dat) == yName, "target", "predictor"),
+      missing_pct = colMeans(is.na(train_dat)) * 100,
+      row.names = NULL,
+      stringsAsFactors = FALSE
+    )
+    test_missing_tbl <- data.frame(
+      fold = i,
+      split = "testing",
       variable = names(test_dat),
       role = ifelse(names(test_dat) == yName, "target", "predictor"),
       missing_pct = colMeans(is.na(test_dat)) * 100,
       row.names = NULL,
       stringsAsFactors = FALSE
     )
+    fold_missing_tables[[i]] <- rbind(train_missing_tbl, test_missing_tbl)
     
-    cat(sprintf("\nTest-data missingness for fold %d:\n", i))
-    print(test_missing_tables[[i]], row.names = FALSE)
+    cat(sprintf("\nFold %d missingness:\n", i))
+    print(fold_missing_tables[[i]], row.names = FALSE)
     
     # ------------------------------------------------------------
     # Fold-wise categorical preprocessing (NO leakage)
@@ -654,22 +665,31 @@ bootstrap <- function(
   }
   
   # -----------------------------
-  # Average missingness across test folds
+  # Average missingness across folds
   # -----------------------------
-  test_missing_all <- do.call(rbind, test_missing_tables)
+  fold_missing_all <- do.call(rbind, fold_missing_tables)
   
-  test_missing_average <- aggregate(
-    missing_pct ~ variable + role,
-    data = test_missing_all,
+  fold_missing_average <- aggregate(
+    missing_pct ~ split + variable + role,
+    data = fold_missing_all,
     FUN = mean
   )
   
-  test_missing_average <- test_missing_average[
-    order(test_missing_average$role, test_missing_average$variable),
+  fold_missing_average <- fold_missing_average[
+    order(fold_missing_average$split, fold_missing_average$role, fold_missing_average$variable),
   ]
   
-  cat("\nAverage test-data missingness across folds:\n")
-  print(test_missing_average, row.names = FALSE)
+  cat("\nAverage fold missingness:\n")
+  print(fold_missing_average, row.names = FALSE)
+
+  training_missing_by_fold <- lapply(fold_missing_tables, function(tbl) {
+    tbl[tbl$split == "training", , drop = FALSE]
+  })
+  testing_missing_by_fold <- lapply(fold_missing_tables, function(tbl) {
+    tbl[tbl$split == "testing", , drop = FALSE]
+  })
+  training_missing_average <- fold_missing_average[fold_missing_average$split == "training", , drop = FALSE]
+  testing_missing_average <- fold_missing_average[fold_missing_average$split == "testing", , drop = FALSE]
 
   final_model <- fit_final_model()
   
@@ -695,8 +715,12 @@ bootstrap <- function(
       f1        = f1_vec,
       auc       = auc_vec,
       final_model = final_model,
-      test_missingness_by_fold = test_missing_tables,
-      test_missingness_average = test_missing_average
+      missingness_by_fold = fold_missing_tables,
+      missingness_average = fold_missing_average,
+      training_missingness_by_fold = training_missing_by_fold,
+      training_missingness_average = training_missing_average,
+      test_missingness_by_fold = testing_missing_by_fold,
+      test_missingness_average = testing_missing_average
     )
   } else {
     list(
@@ -714,8 +738,12 @@ bootstrap <- function(
       MAE  = mae_vec,
       R2   = r2_vec,
       final_model = final_model,
-      test_missingness_by_fold = test_missing_tables,
-      test_missingness_average = test_missing_average
+      missingness_by_fold = fold_missing_tables,
+      missingness_average = fold_missing_average,
+      training_missingness_by_fold = training_missing_by_fold,
+      training_missingness_average = training_missing_average,
+      test_missingness_by_fold = testing_missing_by_fold,
+      test_missingness_average = testing_missing_average
     )
   }
 }
