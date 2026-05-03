@@ -240,7 +240,7 @@ bootstrap <- function(
   # -----------------------------
   # Missingness handling
   # -----------------------------
-  data_used <- if (method == "CC") na.omit(data) else data
+  data_used <- data
   
   n <- nrow(data_used)
   if (n < k) stop("Not enough rows for the requested number of folds.")
@@ -249,11 +249,12 @@ bootstrap <- function(
 
   fit_final_model <- function() {
     if (method == "CC") {
-      form <- reformulate(setdiff(names(data_used), yName), response = yName)
+      data_cc <- stats::na.omit(data_used)
+      form <- reformulate(setdiff(names(data_cc), yName), response = yName)
       if (task == "classification") {
-        return(stats::glm(form, data = data_used, family = stats::binomial()))
+        return(stats::glm(form, data = data_cc, family = stats::binomial()))
       }
-      return(stats::lm(form, data = data_used))
+      return(stats::lm(form, data = data_cc))
     }
 
     if (method == "AC") {
@@ -378,6 +379,23 @@ bootstrap <- function(
     # -------------------------
     if (method == "CC") {
       form <- reformulate(setdiff(names(train_dat), yName), response = yName)
+      train_cc <- stats::na.omit(train_dat)
+      
+      if (nrow(train_cc) == 0L) {
+        if (task == "classification") {
+          acc_vec[i]  <- NA_real_
+          prec_vec[i] <- NA_real_
+          rec_vec[i]  <- NA_real_
+          f1_vec[i]   <- NA_real_
+          auc_vec[i]  <- NA_real_
+        } else {
+          mse_vec[i]  <- NA_real_
+          rmse_vec[i] <- NA_real_
+          mae_vec[i]  <- NA_real_
+          r2_vec[i]   <- NA_real_
+        }
+        next
+      }
       
       # Build model.frame on TEST and drop rows with any NA 
       mf_te <- model.frame(form, test_dat, na.action = na.omit)
@@ -399,12 +417,12 @@ bootstrap <- function(
       }
       
       if (task == "classification") {
-        fit <- glm(form, data = train_dat, family = binomial())
+        fit <- glm(form, data = train_cc, family = binomial())
         
         y_true  <- model.response(mf_te)
         y_score <- as.numeric(predict(fit, newdata = mf_te, type = "response"))
       } else {
-        fit <- lm(form, data = train_dat)
+        fit <- lm(form, data = train_cc)
         
         y_true <- model.response(mf_te)
         y_pred <- as.numeric(predict(fit, newdata = mf_te))
