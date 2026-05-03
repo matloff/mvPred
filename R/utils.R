@@ -300,9 +300,9 @@ bootstrap <- function(
   }
   
   # -----------------------------
-  # Missingness storage for fold splits
+  # Missingness storage for training folds
   # -----------------------------
-  fold_missing_tables <- vector("list", k)
+  train_missing_tables <- vector("list", k)
   
   # -----------------------------
   # Metric storage
@@ -331,32 +331,21 @@ bootstrap <- function(
     test_dat  <- data_used[test_idx,  , drop = FALSE]
     
     # -------------------------
-    # Fold missingness table
+    # Training-fold missingness table
     # - Includes predictors and target
-    # - Stores percent missingness for both training and testing data
+    # - Stores percent missingness for this fold's training data
     # -------------------------
-    train_missing_tbl <- data.frame(
+    train_missing_tables[[i]] <- data.frame(
       fold = i,
-      split = "training",
       variable = names(train_dat),
       role = ifelse(names(train_dat) == yName, "target", "predictor"),
       missing_pct = colMeans(is.na(train_dat)) * 100,
       row.names = NULL,
       stringsAsFactors = FALSE
     )
-    test_missing_tbl <- data.frame(
-      fold = i,
-      split = "testing",
-      variable = names(test_dat),
-      role = ifelse(names(test_dat) == yName, "target", "predictor"),
-      missing_pct = colMeans(is.na(test_dat)) * 100,
-      row.names = NULL,
-      stringsAsFactors = FALSE
-    )
-    fold_missing_tables[[i]] <- rbind(train_missing_tbl, test_missing_tbl)
     
-    cat(sprintf("\nFold %d missingness:\n", i))
-    print(fold_missing_tables[[i]], row.names = FALSE)
+    cat(sprintf("\nTraining-data missingness for fold %d:\n", i))
+    print(train_missing_tables[[i]], row.names = FALSE)
     
     # ------------------------------------------------------------
     # Fold-wise categorical preprocessing (NO leakage)
@@ -665,31 +654,22 @@ bootstrap <- function(
   }
   
   # -----------------------------
-  # Average missingness across folds
+  # Average missingness across training folds
   # -----------------------------
-  fold_missing_all <- do.call(rbind, fold_missing_tables)
+  train_missing_all <- do.call(rbind, train_missing_tables)
   
-  fold_missing_average <- aggregate(
-    missing_pct ~ split + variable + role,
-    data = fold_missing_all,
+  train_missing_average <- aggregate(
+    missing_pct ~ variable + role,
+    data = train_missing_all,
     FUN = mean
   )
   
-  fold_missing_average <- fold_missing_average[
-    order(fold_missing_average$split, fold_missing_average$role, fold_missing_average$variable),
+  train_missing_average <- train_missing_average[
+    order(train_missing_average$role, train_missing_average$variable),
   ]
   
-  cat("\nAverage fold missingness:\n")
-  print(fold_missing_average, row.names = FALSE)
-
-  training_missing_by_fold <- lapply(fold_missing_tables, function(tbl) {
-    tbl[tbl$split == "training", , drop = FALSE]
-  })
-  testing_missing_by_fold <- lapply(fold_missing_tables, function(tbl) {
-    tbl[tbl$split == "testing", , drop = FALSE]
-  })
-  training_missing_average <- fold_missing_average[fold_missing_average$split == "training", , drop = FALSE]
-  testing_missing_average <- fold_missing_average[fold_missing_average$split == "testing", , drop = FALSE]
+  cat("\nAverage training-data missingness across folds:\n")
+  print(train_missing_average, row.names = FALSE)
 
   final_model <- fit_final_model()
   
@@ -715,12 +695,8 @@ bootstrap <- function(
       f1        = f1_vec,
       auc       = auc_vec,
       final_model = final_model,
-      missingness_by_fold = fold_missing_tables,
-      missingness_average = fold_missing_average,
-      training_missingness_by_fold = training_missing_by_fold,
-      training_missingness_average = training_missing_average,
-      test_missingness_by_fold = testing_missing_by_fold,
-      test_missingness_average = testing_missing_average
+      training_missingness_by_fold = train_missing_tables,
+      training_missingness_average = train_missing_average
     )
   } else {
     list(
@@ -738,12 +714,8 @@ bootstrap <- function(
       MAE  = mae_vec,
       R2   = r2_vec,
       final_model = final_model,
-      missingness_by_fold = fold_missing_tables,
-      missingness_average = fold_missing_average,
-      training_missingness_by_fold = training_missing_by_fold,
-      training_missingness_average = training_missing_average,
-      test_missingness_by_fold = testing_missing_by_fold,
-      test_missingness_average = testing_missing_average
+      training_missingness_by_fold = train_missing_tables,
+      training_missingness_average = train_missing_average
     )
   }
 }
