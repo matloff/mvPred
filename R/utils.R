@@ -247,62 +247,11 @@ bootstrap <- function(
   
   folds <- sample(rep(1:k, length.out = n))
 
-  fit_final_model <- function() {
-    if (method == "CC") {
-      data_cc <- stats::na.omit(data_used)
-      form <- reformulate(setdiff(names(data_cc), yName), response = yName)
-      if (task == "classification") {
-        return(stats::glm(form, data = data_cc, family = stats::binomial()))
-      }
-      return(stats::lm(form, data = data_cc))
-    }
-
-    if (method == "AC") {
-      return(do.call(lm_ac, c(list(data = data_used, yName = yName), dots)))
-    }
-
-    if (method == "TOWER") {
-      return(lm_tower(
-        data_used,
-        yName      = yName,
-        regFtnName = tower_regFtnName,
-        opts       = tower_opts,
-        scaling    = tower_scaling,
-        yesYVal    = tower_yesYVal
-      ))
-    }
-
-    impute_method_final <- tolower(impute_method)
-    impute_method_final <- match.arg(
-      impute_method_final,
-      choices = c("mice", "amelia", "missforest", "complete")
-    )
-    m_int <- suppressWarnings(as.integer(m)[1L])
-    if (is.na(m_int) || m_int < 1L) {
-      stop("m must be a positive integer scalar (e.g., m = 5).")
-    }
-
-    prefill_dots <- dots
-    if (impute_method_final == "mice" && !is.null(mice_method)) {
-      prefill_dots$method <- mice_method
-    }
-    if (impute_method_final == "mice" && is.null(prefill_dots$nnet.MaxNWts)) {
-      prefill_dots$nnet.MaxNWts <- 50000
-    }
-
-    do.call(lm_prefill, c(list(
-      data = data_used,
-      yName = yName,
-      impute_method = impute_method_final,
-      m = m_int,
-      use_dummies = use_dummies
-    ), prefill_dots))
-  }
-  
   # -----------------------------
   # Missingness storage for training folds
   # -----------------------------
   train_missing_tables <- vector("list", k)
+  fold_models <- vector("list", k)
   
   # -----------------------------
   # Metric storage
@@ -378,6 +327,7 @@ bootstrap <- function(
     # CC path
     # -------------------------
     if (method == "CC") {
+      fold_models[[i]] <- NULL
       form <- reformulate(setdiff(names(train_dat), yName), response = yName)
       train_cc <- stats::na.omit(train_dat)
       
@@ -418,11 +368,13 @@ bootstrap <- function(
       
       if (task == "classification") {
         fit <- glm(form, data = train_cc, family = binomial())
+        fold_models[[i]] <- fit
         
         y_true  <- model.response(mf_te)
         y_score <- as.numeric(predict(fit, newdata = mf_te, type = "response"))
       } else {
         fit <- lm(form, data = train_cc)
+        fold_models[[i]] <- fit
         
         y_true <- model.response(mf_te)
         y_pred <- as.numeric(predict(fit, newdata = mf_te))
@@ -433,6 +385,7 @@ bootstrap <- function(
       # AC path
       # -------------------------
       obj <- lm_ac(data_used, yName = yName, holdout = test_idx, ...)
+      fold_models[[i]] <- obj
       
       te_raw <- obj$testing_data
       mf_te  <- model.frame(obj$terms, te_raw, na.action = na.omit)
@@ -466,11 +419,10 @@ bootstrap <- function(
       # TOWER path (lm_tower)
       # -------------------------
       
-      # y may have NAs in test; drop those rows for scoring only
-      y_all <- test_dat[[yName]]
-      ok_y  <- !is.na(y_all)
+      form <- reformulate(setdiff(names(train_dat), yName), response = yName)
+      mf_te <- model.frame(form, test_dat, na.action = na.omit)
       
-      if (!any(ok_y)) {
+      if (nrow(mf_te) == 0L) {
         if (task == "classification") {
           acc_vec[i]  <- NA_real_
           prec_vec[i] <- NA_real_
@@ -495,17 +447,18 @@ bootstrap <- function(
         scaling    = tower_scaling,
         yesYVal    = tower_yesYVal
       )
+      fold_models[[i]] <- fit_tw
       
-      # Prepare test predictors 
-      x_te <- test_dat[ok_y, , drop = FALSE]
+      # Prepare complete-case test predictors for scoring
+      x_te <- mf_te
       x_te[[yName]] <- NULL
       
       # Predict
       if (task == "classification") {
-        y_true  <- y_all[ok_y]
+        y_true  <- model.response(mf_te)
         y_score <- as.numeric(predict(fit_tw, newdata = x_te))
       } else {
-        y_true <- y_all[ok_y]
+        y_true <- model.response(mf_te)
         y_pred <- as.numeric(predict(fit_tw, newdata = x_te))
       } 
     } else {
@@ -589,6 +542,7 @@ bootstrap <- function(
       ), dots)
       
       obj_pf <- do.call(lm_prefill, args_pf)
+      fold_models[[i]] <- obj_pf
       
       te_raw <- obj_pf$testing_data
       mf_te  <- model.frame(obj_pf$formula, te_raw, na.action = na.omit)
@@ -671,8 +625,6 @@ bootstrap <- function(
   cat("\nAverage training-data missingness across folds:\n")
   print(train_missing_average, row.names = FALSE)
 
-  final_model <- fit_final_model()
-  
   # -----------------------------
   # Output
   # -----------------------------
@@ -694,7 +646,7 @@ bootstrap <- function(
       recall    = rec_vec,
       f1        = f1_vec,
       auc       = auc_vec,
-      final_model = final_model,
+      fold_models = fold_models,
       training_missingness_by_fold = train_missing_tables,
       training_missingness_average = train_missing_average
     )
@@ -713,7 +665,7 @@ bootstrap <- function(
       RMSE = rmse_vec,
       MAE  = mae_vec,
       R2   = r2_vec,
-      final_model = final_model,
+      fold_models = fold_models,
       training_missingness_by_fold = train_missing_tables,
       training_missingness_average = train_missing_average
     )
