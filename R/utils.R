@@ -213,7 +213,7 @@ bootstrap <- function(
     
     # Reproducibility
     seed = 42,
-    test_split = 0,
+    test_split = 0.2,
     
     # PREFILL-specific arguments
     impute_method = c("mice", "amelia", "missforest", "complete"),
