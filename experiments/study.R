@@ -119,6 +119,53 @@ run_cc_ac_tower_prefill <- function(
   )
   
   print(out, row.names = FALSE)
+  
+  final_out <- rbind(
+    data.frame(
+      dataset = dataset_name, yName = yName, method = "CC",
+      MSE = res_cc$test_results$MSE, RMSE = res_cc$test_results$RMSE,
+      MAE = res_cc$test_results$MAE, R2 = res_cc$test_results$R2,
+      n_test_scored = res_cc$test_results$n_test_scored,
+      n_test_dropped = res_cc$test_results$n_test_dropped,
+      stringsAsFactors = FALSE
+    ),
+    data.frame(
+      dataset = dataset_name, yName = yName, method = "AC",
+      MSE = res_ac$test_results$MSE, RMSE = res_ac$test_results$RMSE,
+      MAE = res_ac$test_results$MAE, R2 = res_ac$test_results$R2,
+      n_test_scored = res_ac$test_results$n_test_scored,
+      n_test_dropped = res_ac$test_results$n_test_dropped,
+      stringsAsFactors = FALSE
+    ),
+    data.frame(
+      dataset = dataset_name, yName = yName, method = "TOWER",
+      MSE = res_tw$test_results$MSE, RMSE = res_tw$test_results$RMSE,
+      MAE = res_tw$test_results$MAE, R2 = res_tw$test_results$R2,
+      n_test_scored = res_tw$test_results$n_test_scored,
+      n_test_dropped = res_tw$test_results$n_test_dropped,
+      stringsAsFactors = FALSE
+    ),
+    data.frame(
+      dataset = dataset_name, yName = yName, method = "PREFILL_mice",
+      MSE = res_pf_mice$test_results$MSE, RMSE = res_pf_mice$test_results$RMSE,
+      MAE = res_pf_mice$test_results$MAE, R2 = res_pf_mice$test_results$R2,
+      n_test_scored = res_pf_mice$test_results$n_test_scored,
+      n_test_dropped = res_pf_mice$test_results$n_test_dropped,
+      stringsAsFactors = FALSE
+    )
+  )
+  
+  # cat("\nFinal-model performance on held-out test data:\n")
+  # print(final_out, row.names = FALSE)
+  
+  final_train_missing <- res_cc$final_model_training_missingness
+  cat("\nFinal-model training-data missingness:\n")
+  print(final_train_missing, row.names = FALSE)
+  
+  final_test_missing <- res_cc$final_model_testing_missingness
+  cat("\nFinal-model testing-data missingness:\n")
+  print(final_test_missing, row.names = FALSE)
+  
   invisible(out)
 }
 

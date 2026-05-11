@@ -543,10 +543,10 @@ bootstrap <- function(
       stringsAsFactors = FALSE
     )
     
-    cat(sprintf("\nTraining-data missingness for fold %d:\n", i))
-    print(train_missing_tables[[i]], row.names = FALSE)
-    cat(sprintf("\nTesting-data missingness for fold %d:\n", i))
-    print(test_missing_tables[[i]], row.names = FALSE)
+    # cat(sprintf("\nTraining-data missingness for fold %d:\n", i))
+    # print(train_missing_tables[[i]], row.names = FALSE)
+    # cat(sprintf("\nTesting-data missingness for fold %d:\n", i))
+    # print(test_missing_tables[[i]], row.names = FALSE)
     
     split_res <- fit_and_predict_split(
       train_dat = train_dat,
@@ -627,8 +627,8 @@ bootstrap <- function(
     order(train_missing_average$role, train_missing_average$variable),
   ]
   
-  cat("\nAverage training-data missingness across folds:\n")
-  print(train_missing_average, row.names = FALSE)
+  # cat("\nAverage training-data missingness across folds:\n")
+  # print(train_missing_average, row.names = FALSE)
   
   test_missing_all <- do.call(rbind, test_missing_tables)
   test_missing_average <- aggregate(
@@ -640,15 +640,49 @@ bootstrap <- function(
     order(test_missing_average$role, test_missing_average$variable),
   ]
   
-  cat("\nAverage testing-data missingness across folds:\n")
-  print(test_missing_average, row.names = FALSE)
+  # cat("\nAverage testing-data missingness across folds:\n")
+  # print(test_missing_average, row.names = FALSE)
   
   final_model <- NULL
   test_results <- NULL
+  final_model_training_missingness <- NULL
+  final_model_testing_missingness <- NULL
   if (test_split > 0) {
+    final_train_dat <- data_used
+    final_test_dat <- data_all[outer_test_idx, , drop = FALSE]
+    
+    final_train_missing <- data.frame(
+      variable = names(final_train_dat),
+      role = ifelse(names(final_train_dat) == yName, "target", "predictor"),
+      missing_pct = colMeans(is.na(final_train_dat)) * 100,
+      row.names = NULL,
+      stringsAsFactors = FALSE
+    )
+    final_test_missing <- data.frame(
+      variable = names(final_test_dat),
+      role = ifelse(names(final_test_dat) == yName, "target", "predictor"),
+      missing_pct = colMeans(is.na(final_test_dat)) * 100,
+      row.names = NULL,
+      stringsAsFactors = FALSE
+    )
+    
+    final_train_missing <- final_train_missing[
+      order(final_train_missing$role, final_train_missing$variable),
+    ]
+    final_test_missing <- final_test_missing[
+      order(final_test_missing$role, final_test_missing$variable),
+    ]
+    final_model_training_missingness <- final_train_missing
+    final_model_testing_missingness <- final_test_missing
+    
+    # cat("\nFinal-model training-data missingness:\n")
+    # print(final_train_missing, row.names = FALSE)
+    # cat("\nFinal-model testing-data missingness:\n")
+    # print(final_test_missing, row.names = FALSE)
+    
     final_res <- fit_and_predict_split(
-      train_dat = data_used,
-      test_dat = data_all[outer_test_idx, , drop = FALSE],
+      train_dat = final_train_dat,
+      test_dat = final_test_dat,
       data_reference = data_all,
       holdout_idx = outer_test_idx
     )
@@ -745,6 +779,8 @@ bootstrap <- function(
       fold_models = fold_models,
       final_model = final_model,
       test_results = test_results,
+      final_model_training_missingness = final_model_training_missingness,
+      final_model_testing_missingness = final_model_testing_missingness,
       training_missingness_by_fold = train_missing_tables,
       training_missingness_average = train_missing_average
     )
@@ -768,6 +804,8 @@ bootstrap <- function(
       fold_models = fold_models,
       final_model = final_model,
       test_results = test_results,
+      final_model_training_missingness = final_model_training_missingness,
+      final_model_testing_missingness = final_model_testing_missingness,
       training_missingness_by_fold = train_missing_tables,
       training_missingness_average = train_missing_average
     )
