@@ -283,7 +283,6 @@ run_study <- function() {
   all_results <- rbind(
     run_cc_ac_tower_prefill(df_auto,     y_mpg,     "mpg"),
     run_cc_ac_tower_prefill(df_tao,     y_tao,     "tao"),
-    run_cc_ac_tower_prefill(df_sleep,   y_sleep,   "sleep"),
     run_cc_ac_tower_prefill(df_wine_pp, y_wine,    "wine"),
     run_cc_ac_tower_prefill(df_english2,    y_english,    "english"),
     run_cc_ac_tower_prefill(df_nhkids,      y_nhkids,     "NHkids")
