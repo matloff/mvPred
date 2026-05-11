@@ -32,7 +32,7 @@ run_cc_ac_tower_prefill <- function(
     return(data.frame(
       dataset = dataset_name,
       yName = yName,
-      method = c("CC", "AC", "TOWER", "PREFILL_mice"),
+      method = c("CC", "AC", "TOWER", "PREFILL_mice", "PREFILL_amelia", "PREFILL_missforest"),
       MSE_mean = NA_real_,
       RMSE_mean = NA_real_,
       MAE_mean = NA_real_,
@@ -91,6 +91,28 @@ run_cc_ac_tower_prefill <- function(
     use_dummies = FALSE
   )
   
+  res_pf_amelia <- mvPred::bootstrap(
+    data = df,
+    yName = yName,
+    k = k,
+    task = "regression",
+    method = "PREFILL",
+    impute_method = "amelia",
+    m = 5,
+    use_dummies = FALSE
+  )
+  
+  res_pf_missforest <- mvPred::bootstrap(
+    data = df,
+    yName = yName,
+    k = k,
+    task = "regression",
+    method = "PREFILL",
+    impute_method = "missforest",
+    m = 5,
+    use_dummies = FALSE
+  )
+  
   out <- rbind(
     data.frame(
       dataset = dataset_name, yName = yName, method = "CC",
@@ -114,6 +136,18 @@ run_cc_ac_tower_prefill <- function(
       dataset = dataset_name, yName = yName, method = "PREFILL_mice",
       MSE_mean = res_pf_mice$MSE_mean, RMSE_mean = res_pf_mice$RMSE_mean,
       MAE_mean = res_pf_mice$MAE_mean, R2_mean = res_pf_mice$R2_mean,
+      n = nrow(df), stringsAsFactors = FALSE
+    ),
+    data.frame(
+      dataset = dataset_name, yName = yName, method = "PREFILL_amelia",
+      MSE_mean = res_pf_amelia$MSE_mean, RMSE_mean = res_pf_amelia$RMSE_mean,
+      MAE_mean = res_pf_amelia$MAE_mean, R2_mean = res_pf_amelia$R2_mean,
+      n = nrow(df), stringsAsFactors = FALSE
+    ),
+    data.frame(
+      dataset = dataset_name, yName = yName, method = "PREFILL_missforest",
+      MSE_mean = res_pf_missforest$MSE_mean, RMSE_mean = res_pf_missforest$RMSE_mean,
+      MAE_mean = res_pf_missforest$MAE_mean, R2_mean = res_pf_missforest$R2_mean,
       n = nrow(df), stringsAsFactors = FALSE
     )
   )
