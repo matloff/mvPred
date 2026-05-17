@@ -39,25 +39,30 @@ qeMLna <- function(data,yName,qeMLftn,
    mvFtn,qeMLopts=NULL,mvPredOpts=NULL,retainMVFtnOut=TRUE,
    seed=9999,holdout=1000)
 {
-   require(qeML)
+   if (!requireNamespace("qeML", quietly = TRUE)) {
+      stop("Package 'qeML' must be installed to use qeMLna().")
+   }
+   intactRows <- NULL
+   nonintactRows <- NULL
+   MVFtnOut <- NULL
    # cases in which MV method involves pre-processing the data
    if (mvFtn == 'compCases') {
       tmp <- compCases(data)
-      intactRows <<- tmp[[2]]
-      nonintactRows <<- tmp[[3]]
+      intactRows <- tmp[[2]]
+      nonintactRows <- tmp[[3]]
       qeMLopts <- addListElement(qeMLopts,'data',tmp$intactData)
    } else if (mvFtn == 'mice') {
       warning('m will be set to 1')
       mvPredOpts[['data']] <- data
       mvPredOpts[['m']] <- 1
-      MVFtnOut <- do.call('mice',mvPredOpts)
-      imp <- complete(MVFtnOut)
+      MVFtnOut <- do.call(mice::mice,mvPredOpts)
+      imp <- mice::complete(MVFtnOut)
       qeMLopts <- addListElement(qeMLopts,'data',imp)
    }
 
    qeMLopts <- addListElement(qeMLopts,'yName',yName)
 
-   qeMLout <- do.call(qeMLftn,qeMLopts)
+   qeMLout <- do.call(getExportedValue("qeML", qeMLftn), qeMLopts)
 
    qeMLout$intactRows <- intactRows
    qeMLout$nonintactRows <- nonintactRows

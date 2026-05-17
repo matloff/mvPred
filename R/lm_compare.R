@@ -1,5 +1,3 @@
-source("R/utils.R") 
-
 # Compare multiple methods using bootstrap() and return a summary table.                                                                                                                                                 
 lm_compare <- function(                                                                                                                                                                                                  
   data,                                                                                                                                                                                                                  
@@ -23,6 +21,18 @@ lm_compare <- function(
 ) {                                                                                                                                                                                                                      
   task <- match.arg(task)                                                                                                                                                                                                
   impute_method <- match.arg(impute_method)                                                                                                                                                                              
+  valid_methods <- c("CC", "AC", "TOWER", "PREFILL")
+  invalid_methods <- setdiff(methods, valid_methods)
+  if (length(invalid_methods) > 0) {
+    stop(
+      paste(
+        "Invalid method(s):",
+        paste(invalid_methods, collapse = ", "),
+        ". Valid methods are:",
+        paste(valid_methods, collapse = ", ")
+      )
+    )
+  }
                                                                                                                                                                                                                           
   df <- as.data.frame(data)                                                                                                                                                                                              
   if (!(yName %in% names(df))) stop(paste("Column", yName, "not found in data."))                                                                                                                                        
@@ -73,7 +83,8 @@ lm_compare <- function(
       k = k,                                                                                                                                                                                                             
       task = task,                                                                                                                                                                                                       
       method = method,                                                                                                                                                                                                   
-      seed = seed                                                                                                                                                                                                        
+      seed = seed,
+      test_split = 0
     )                                                                                                                                                                                                                    
                                                                                                                                                                                                                           
     if (method == "PREFILL") {                                                                                                                                                                                           

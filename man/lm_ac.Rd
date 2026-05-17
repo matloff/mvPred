@@ -12,7 +12,7 @@ any rows with missing values. The main function \code{lm_ac} fits the model even
 The helper functions compute matrix products using only complete pairs of observations. S3 methods are included for summary and prediction.
 }
 \usage{
-lm_ac(data, yName, ...)
+lm_ac(data, yName, holdout = NULL, ...)
 
 ac_mul(A)
 
@@ -24,7 +24,8 @@ ac_vec(X, y)
 }
 \arguments{
   \item{data}{A data.frame containing predictors and the response variable.}
-  \item{yName}{The name of the predictor column in \code{data}.}
+  \item{yName}{The name of the response column in \code{data}.}
+  \item{holdout}{Optional holdout specification used to define testing rows. This may be a logical vector of length \code{nrow(data)} or a numeric vector of row indices. If \code{NULL}, all rows are used for fitting.}
   \item{...}{Additional arguments passed to \code{model.frame} in \code{lm_ac}.}
   \item{A}{A numeric matrix or data frame to be used in \code{ac_mul} to compute ATA.}
   \item{X}{A numeric matrix of predictors for \code{ac_vec}.}

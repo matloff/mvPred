@@ -9,11 +9,11 @@
   \code{Amelia}, and \code{missForest}, as well as complete-case analysis.
 }
 \usage{
-lm_prefill(data, yName, impute_method = "mice", m = 5, use_dummies = FALSE, ...)
+lm_prefill(data, yName, impute_method = "mice", m = 5, use_dummies = FALSE, holdout = NULL, ...)
 
-summary(object, ...)
+\method{summary}{lm_prefill}(object, ...)
 
-predict(object, newdata, type = "response", ...)
+\method{predict}{lm_prefill}(object, newdata, type = "response", ...)
 }
 \arguments{
   \item{data}{A data frame containing the variables for modeling, possibly with missing values.}
@@ -21,6 +21,7 @@ predict(object, newdata, type = "response", ...)
   \item{impute_method}{Character string specifying the imputation method to use. One of \code{"mice"} (default), \code{"amelia"}, \code{"missforest"}, or \code{"complete"}.}
   \item{m}{Integer specifying the number of multiple imputations to generate (only used for \code{"mice"} and \code{"amelia"} methods). Default is 5.}
   \item{use_dummies}{Logical indicating whether to convert categorical predictors to dummy variables before imputation (only relevant for \code{"amelia"} method). Default is \code{FALSE}.}
+  \item{holdout}{Optional holdout specification used to define testing rows. This may be a logical vector of length \code{nrow(data)} or a numeric vector of row indices. If \code{NULL}, all rows are treated as training data.}
   \item{...}{Additional arguments passed to the imputation function (\code{mice::mice}, \code{Amelia::amelia}, or \code{missForest::missForest}) or to \code{stats::lm} for model fitting.}
   \item{object}{An object of class \code{"lm_prefill"} returned by \code{lm_prefill()}.}
   \item{newdata}{A data frame containing new data for prediction. Rows with missing values in \code{newdata} are omitted before prediction.}

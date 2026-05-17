@@ -10,9 +10,9 @@
 \usage{
 lm_tower(data, yName, regFtnName = "lm", opts = list(), scaling = NULL, yesYVal = NULL)
 
-summary(object, ...)
+\method{summary}{lm_tower}(object, ...)
 
-predict(object, newdata, ...)
+\method{predict}{lm_tower}(object, newdata, ...)
 }
 \arguments{
   \item{data}{A data frame containing the training data with possible missing values.}
