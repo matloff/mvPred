@@ -2,11 +2,12 @@ Package: mvPred
 Type: Package
 Title: Methods for Handling Missing Values in Linear Modeling
 Version: 0.1.0
-Author: Norman Matloff [aut, cre],
-      Cynthia Mascarenhas [aut],
-      Billy Ouattara [aut],
-      Alekya Veluri [aut]
-Maintainer: Norman Matloff <nsmatloff@ucdavis.edu>
+Authors@R: c(
+    person("Norman", "Matloff", email = "nsmatloff@ucdavis.edu", role = "aut"),
+    person("Cynthia", "Mascarenhas", email = "cin22jan@gmail.com", role = "aut"),
+    person("Billy", "Ouattara", email = "ouattarabilly33@hotmail.com", role = c("aut", "cre")),
+    person("Alekya", "Veluri", email = "alekyaveluri@gmail.com", role = "aut"))
+Maintainer: Billy Ouattara <ouattarabilly33@hotmail.com>
 Description: Provides user-friendly methods for handling missing data in regression modeling, including available-case linear regression, multiple imputation using mice, Amelia, and missForest, and missing-data handling via the toweranNA package.
 Depends: R (>= 4.0.0)
 Imports:
